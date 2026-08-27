@@ -1,0 +1,121 @@
+{% extends "base.html.j2" %}
+{% block title %}Resume — JobOS{% endblock %}
+{% block content %}
+<h1>Master resume</h1>
+<p class="subtle">
+  Upload once. JobOS stores it as structured data so optimisation can change wording and
+  ordering without ever touching your facts.
+</p>
+
+<div class="card">
+  <h2>Upload</h2>
+  <form method="post" action="/resume/upload" enctype="multipart/form-data" class="actions"
+        data-busy="Reading resume...">
+    <input type="file" name="file" accept=".pdf,.docx,.md,.markdown" required>
+    <button type="submit" class="btn primary">Upload and structure</button>
+  </form>
+  <p class="subtle" style="margin-top:10px">
+    PDF, DOCX, or Markdown, up to 10 MB. A new upload becomes the current master; earlier
+    versions are kept.
+  </p>
+</div>
+
+{% if warnings %}
+<div class="flash warn">
+  <b>Review these import notes</b>
+  <ul>{% for warning in warnings %}<li>{{ warning }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+{% if master %}
+<div class="card">
+  <div class="page-head">
+    <div>
+      <h2 style="margin-top:0">{{ master.resume.contact.name }}</h2>
+      <p class="subtle">
+        Version {{ master.id }} from <code>{{ master.source_name }}</code>,
+        imported {{ master.created_at.strftime('%Y-%m-%d %H:%M') }} UTC.
+      </p>
+    </div>
+    <div class="spacer"></div>
+    <div class="actions">
+      <a class="btn small" href="/resume/{{ master.id }}.json">View JSON</a>
+    </div>
+  </div>
+
+  <div class="grid two">
+    <div>
+      <h3>Contact</h3>
+      <ul class="plain">
+        {% if master.resume.contact.email %}<li>{{ master.resume.contact.email }}</li>{% endif %}
+        {% if master.resume.contact.phone %}<li>{{ master.resume.contact.phone }}</li>{% endif %}
+        {% if master.resume.contact.location %}<li>{{ master.resume.contact.location }}</li>{% endif %}
+        {% for link in master.resume.contact.links %}<li>{{ link }}</li>{% endfor %}
+      </ul>
+      <h3>Skills ({{ master.resume.skills | length }})</h3>
+      <div class="chips">
+        {% for skill in master.resume.skills %}<span class="badge">{{ skill }}</span>{% endfor %}
+      </div>
+      {% if master.resume.summary %}
+      <h3>Summary</h3>
+      <p>{{ master.resume.summary }}</p>
+      {% endif %}
+    </div>
+    <div>
+      <h3>Experience ({{ master.resume.experience | length }})</h3>
+      {% for item in master.resume.experience %}
+      <p style="margin-bottom:2px">
+        <b>{{ item.title or 'Role' }}</b>{% if item.company %} — {{ item.company }}{% endif %}<br>
+        <span class="subtle">
+          {{ item.start_date }}{% if item.end_date %} – {{ item.end_date }}{% endif %}
+          · {{ item.bullets | length }} bullet{{ '' if item.bullets | length == 1 else 's' }}
+        </span>
+      </p>
+      {% else %}
+      <p class="subtle">No experience was detected. Check the JSON and re-upload if this looks wrong.</p>
+      {% endfor %}
+      <h3>Education ({{ master.resume.education | length }})</h3>
+      <ul class="plain">
+        {% for item in master.resume.education %}
+        <li>{{ item.degree }}{% if item.field %} — {{ item.field }}{% endif %}
+          <span class="subtle">{{ item.institution }}</span></li>
+        {% else %}
+        <li class="subtle">None detected.</li>
+        {% endfor %}
+      </ul>
+      <h3>Projects ({{ master.resume.projects | length }})</h3>
+      <ul class="plain">
+        {% for item in master.resume.projects %}<li>{{ item.name }}</li>
+        {% else %}<li class="subtle">None detected.</li>{% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
+
+{% if versions | length > 1 %}
+<div class="card">
+  <h2>Versions</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>ID</th><th>Source</th><th>Kind</th><th>Created</th><th>Hash</th></tr></thead>
+      <tbody>
+        {% for version in versions %}
+        <tr>
+          <td>{{ version.id }}</td>
+          <td>{{ version.source_name }}</td>
+          <td><span class="badge">{{ 'master' if version.is_master else version.source_format }}</span></td>
+          <td class="nowrap">{{ version.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td><code>{{ version.content_hash[:12] }}</code></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% else %}
+<div class="card">
+  <p class="empty">No resume uploaded yet. Start with the upload above.</p>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,60 @@
+# Copy to config.yaml and add the career pages you want JobOS to crawl.
+data_dir: .jobos
+output_dir: output
+
+ai:
+  provider: ollama
+  model: gemma3:12b
+  base_url: http://127.0.0.1:11434
+  temperature: 0.1
+  timeout_seconds: 90
+
+  # Efficiency controls, tuned for small local models.
+  # Payloads are trimmed to the requirement-dense part of a posting, so raising
+  # this mostly costs time without improving results.
+  max_input_chars: 6000
+  max_output_tokens: 800
+  # Only the most job-relevant bullets are sent for rewording. 0 disables rewording.
+  max_bullet_rewrites: 6
+  # Keeps the model resident between calls so a full run loads weights once.
+  keep_alive: 10m
+
+  # Every task has a deterministic fallback, so turning one off degrades quality
+  # rather than breaking the workflow. On a 1B model, disabling structure_resume
+  # is often better than letting it guess at your resume layout.
+  tasks:
+    structure_resume: true
+    analyse_jobs: true
+    rewrite_summary: true
+    rewrite_bullets: true
+    cover_letter: true
+
+  # Cloud providers are opt-in. Put keys in environment variables, never here:
+  # OpenAI: JOBOS_OPENAI_API_KEY
+  # Anthropic: JOBOS_ANTHROPIC_API_KEY
+  # Gemini: JOBOS_GEMINI_API_KEY
+  # OpenRouter: JOBOS_OPENROUTER_API_KEY
+
+crawler:
+  concurrency: 5
+  per_company_limit: 200
+  timeout_seconds: 30
+  use_browser_fallback: true
+  respect_robots_txt: true
+
+preferences:
+  preferred_locations: [Remote, Hyderabad, Bengaluru]
+  remote_only: false
+  minimum_match_score: 45
+
+# Only these companies are ever crawled. Uncomment or add your own.
+# Greenhouse, Lever, Ashby, SmartRecruiters, and Workday boards use their public
+# JSON APIs. Anything else falls back to JSON-LD and conservative HTML parsing.
+companies:
+  # Simple form:
+  # stripe: https://stripe.com/jobs
+  # Extended form:
+  # microsoft:
+  #   name: Microsoft
+  #   url: https://careers.microsoft.com/
+  #   enabled: true

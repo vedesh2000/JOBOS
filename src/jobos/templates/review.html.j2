@@ -1,0 +1,131 @@
+{% extends "base.html.j2" %}
+{% block title %}Review changes — JobOS{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Review before generating</h1>
+    <p class="subtle">
+      {{ job.company }} · {{ job.title }} · application {{ application.id }} ·
+      <span class="badge">{{ application.status.value }}</span>
+    </p>
+  </div>
+  <div class="spacer"></div>
+  <div style="text-align:right">
+    <div class="subtle">ATS estimate</div>
+    <div style="font-size:1.5rem">
+      {{ application.ats_before.overall_score }} &rarr;
+      <span class="score {{ application.ats_after.overall_score | score_band }}">{{ application.ats_after.overall_score }}</span>
+    </div>
+  </div>
+</div>
+
+{% if warnings %}
+<div class="flash warn">
+  <ul>{% for warning in warnings %}<li>{{ warning }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+{% if application.status.value == 'approved' %}
+<div class="flash info">
+  Generated in <code>{{ application.output_dir }}</code>.
+  <div class="actions" style="margin-top:8px">
+    {% for name in artifacts %}
+    <a class="btn small" href="/applications/{{ application.id }}/files/{{ name }}">{{ name }}</a>
+    {% endfor %}
+  </div>
+</div>
+{% else %}
+<div class="card">
+  <div class="actions">
+    <form method="post" action="/applications/{{ application.id }}/approve" class="inline"
+          data-busy="Rendering PDF...">
+      <button type="submit" class="btn primary">Approve and generate package</button>
+    </form>
+    <a class="btn" href="/jobs/{{ job.id }}">Back to job</a>
+  </div>
+  <p class="subtle" style="margin:10px 0 0">
+    Nothing is written to <code>output/</code> until you approve. Each approval creates a new
+    version and never overwrites an earlier one.
+  </p>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Summary</h2>
+  {% if diff.summary_before != diff.summary_after %}
+  <div class="diff-before"><b>Before:</b> {{ diff.summary_before or '(empty)' }}</div>
+  <div class="diff-after"><b>After:</b> {{ diff.summary_after or '(empty)' }}</div>
+  {% else %}
+  <p class="subtle">Unchanged.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Reworded bullets ({{ diff.bullet_changes | length }})</h2>
+  {% for change in diff.bullet_changes %}
+  <h3><code>{{ change.bullet_id }}</code></h3>
+  <div class="diff-before">{{ change.before }}</div>
+  <div class="diff-after">{{ change.after }}</div>
+  {% else %}
+  <p class="subtle">No wording changed. Facts and numbers are always preserved.</p>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <h2>Reordering</h2>
+  <ul class="plain">
+    {% for item in diff.ordering_changes %}<li>{{ item }}</li>
+    {% else %}<li class="subtle">No reordering.</li>{% endfor %}
+  </ul>
+  {% if diff.skill_order_before != diff.skill_order_after %}
+  <h3>Skill order</h3>
+  <div class="diff-before">{{ diff.skill_order_before | join(' • ') or '(none)' }}</div>
+  <div class="diff-after">{{ diff.skill_order_after | join(' • ') or '(none)' }}</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Rejected edits ({{ diff.rejected_edits | length }})</h2>
+  <p class="subtle">
+    Blocked because your resume does not support them. This is the guardrail working, not an error.
+  </p>
+  {% for rejected in diff.rejected_edits %}
+  <h3><code>{{ rejected.target }}</code></h3>
+  <div class="diff-before rejected"><b>Reason:</b> {{ rejected.reason }}</div>
+  {% if rejected.proposed_text %}
+  <div class="diff-before rejected"><b>Proposed:</b> {{ rejected.proposed_text }}</div>
+  {% endif %}
+  {% else %}
+  <p class="subtle">None.</p>
+  {% endfor %}
+</div>
+
+{% if application.cover_letter %}
+<div class="card">
+  <h2>Cover letter</h2>
+  <pre>{{ application.cover_letter.markdown }}</pre>
+  {% if application.cover_letter.fact_sources %}
+  <p class="subtle">Grounded in: {{ application.cover_letter.fact_sources | join(', ') }}</p>
+  {% endif %}
+  {% if application.cover_letter.warnings %}
+  <ul class="plain">
+    {% for item in application.cover_letter.warnings %}<li class="subtle">{{ item }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if application.plan.explanations %}
+<div class="card">
+  <h2>Why these changes</h2>
+  <ul class="plain">
+    {% for item in application.plan.explanations %}<li>{{ item }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Optimised resume preview</h2>
+  <pre>{{ preview }}</pre>
+</div>
+{% endblock %}

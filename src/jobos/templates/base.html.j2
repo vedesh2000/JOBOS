@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>{% block title %}JobOS{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}">
+<script src="{{ url_for('static', path='/app.js') }}" defer></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/">JobOS<span>local</span></a>
+  <nav class="topnav">
+    <a href="/" class="{{ 'active' if active == 'jobs' }}">Jobs</a>
+    <a href="/resume" class="{{ 'active' if active == 'resume' }}">Resume</a>
+    <a href="/history" class="{{ 'active' if active == 'history' }}">History</a>
+    <a href="/doctor" class="{{ 'active' if active == 'doctor' }}">Doctor</a>
+  </nav>
+  <div class="spacer"></div>
+  <button type="button" id="theme-toggle" class="btn small">Dark</button>
+</header>
+<main>
+  {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+  {% if notice %}<div class="flash info">{{ notice }}</div>{% endif %}
+  {% block content %}{% endblock %}
+  <footer class="note">
+    JobOS prepares applications and opens the employer's own page. It never submits an
+    application, logs in, or bypasses bot protection on your behalf.
+  </footer>
+</main>
+</body>
+</html>

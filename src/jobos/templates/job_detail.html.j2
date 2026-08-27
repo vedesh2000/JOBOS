@@ -1,0 +1,202 @@
+{% extends "base.html.j2" %}
+{% block title %}{{ job.title }} — {{ job.company }} — JobOS{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ job.title }}</h1>
+    <p class="subtle">
+      {{ job.company }}{% if job.location %} · {{ job.location }}{% endif %}
+      {% if job.employment_type %} · {{ job.employment_type }}{% endif %}
+      · <span class="badge">{{ job.status.value }}</span>
+    </p>
+  </div>
+  <div class="spacer"></div>
+  <div class="actions">
+    <a class="btn" href="{{ job.apply_url }}" target="_blank" rel="noopener noreferrer">Open posting</a>
+    <form method="post" action="/jobs/{{ job.id }}/apply" class="inline">
+      <button type="submit" class="btn primary">Apply</button>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="actions">
+    <form method="post" action="/jobs/{{ job.id }}/analyse" class="inline" data-busy="Analysing...">
+      <button type="submit" class="btn">{{ 'Re-analyse' if report else 'Analyse and score' }}</button>
+    </form>
+    <form method="post" action="/jobs/{{ job.id }}/optimise" class="inline" data-busy="Optimising...">
+      <input type="hidden" name="cover_letter" value="0">
+      <button type="submit" class="btn primary">Optimise resume</button>
+    </form>
+    <form method="post" action="/jobs/{{ job.id }}/optimise" class="inline" data-busy="Optimising...">
+      <input type="hidden" name="cover_letter" value="1">
+      <button type="submit" class="btn">Optimise + cover letter</button>
+    </form>
+    <form method="post" action="/jobs/{{ job.id }}/status" class="inline">
+      <input type="hidden" name="status" value="ignored">
+      <button type="submit" class="btn small">Ignore</button>
+    </form>
+    <form method="post" action="/jobs/{{ job.id }}/status" class="inline">
+      <input type="hidden" name="status" value="applied">
+      <button type="submit" class="btn small">Mark applied</button>
+    </form>
+  </div>
+  <p class="subtle" style="margin:10px 0 0">
+    Optimising runs your local model. With a 12B model this usually takes under a minute.
+  </p>
+</div>
+
+{% if report %}
+<div class="card">
+  <div class="page-head">
+    <div>
+      <h2 style="margin-top:0">ATS compatibility</h2>
+      <p class="subtle">
+        Scorer <code>{{ report.scoring_version }}</code>, confidence {{ report.confidence }}.
+        An estimate from JobOS, not a reading from the employer's ATS.
+      </p>
+    </div>
+    <div class="spacer"></div>
+    <div style="text-align:right">
+      <div class="score {{ report.overall_score | score_band }}" style="font-size:2rem">
+        {{ report.overall_score }}<span class="subtle" style="font-size:0.9rem">/100</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Component</th><th class="nowrap">Score</th><th>Evidence</th><th>Gaps</th></tr></thead>
+      <tbody>
+        {% for component in report.components %}
+        <tr>
+          <td class="nowrap">{{ component.name }}</td>
+          <td class="nowrap">
+            {{ component.score }}/{{ component.maximum }}
+            <div class="bar"><i style="width: {{ (component.score / component.maximum * 100) | round(0) }}%"></i></div>
+          </td>
+          <td>{{ component.evidence | join(', ') if component.evidence else '—' }}</td>
+          <td>{{ component.gaps | join(', ') if component.gaps else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="grid two" style="margin-top:16px">
+    <div>
+      <h3>Matching skills</h3>
+      <div class="chips">
+        {% for skill in report.matching_skills %}<span class="badge ok">{{ skill }}</span>{% endfor %}
+        {% if not report.matching_skills %}<span class="subtle">None.</span>{% endif %}
+      </div>
+      <h3>Keywords found</h3>
+      <div class="chips">
+        {% for keyword in report.keywords_found %}<span class="badge">{{ keyword }}</span>{% endfor %}
+        {% if not report.keywords_found %}<span class="subtle">None.</span>{% endif %}
+      </div>
+      <h3>Strong areas</h3>
+      <ul class="plain">
+        {% for item in report.strong_areas %}<li>{{ item }}</li>
+        {% else %}<li class="subtle">None.</li>{% endfor %}
+      </ul>
+    </div>
+    <div>
+      <h3>Missing skills</h3>
+      <div class="chips">
+        {% for skill in report.missing_skills %}<span class="badge fail">{{ skill }}</span>{% endfor %}
+        {% if not report.missing_skills %}<span class="subtle">None.</span>{% endif %}
+      </div>
+      <p class="subtle">
+        JobOS will not add these to your resume. They are shown so you can decide honestly.
+      </p>
+      <h3>Weak areas</h3>
+      <ul class="plain">
+        {% for item in report.weak_areas %}<li>{{ item }}</li>
+        {% else %}<li class="subtle">None.</li>{% endfor %}
+      </ul>
+      <h3>Suggestions</h3>
+      <ul class="plain">
+        {% for item in report.suggestions %}<li>{{ item }}</li>
+        {% else %}<li class="subtle">None.</li>{% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="flash info">Not scored yet. Run <b>Analyse and score</b> to compare it with your master resume.</div>
+{% endif %}
+
+{% if applications %}
+<div class="card">
+  <h2>Generated packages</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>ID</th><th>Status</th><th class="nowrap">Score</th><th>Created</th><th>Output</th><th></th></tr></thead>
+      <tbody>
+        {% for application in applications %}
+        <tr>
+          <td>{{ application.id }}</td>
+          <td><span class="badge">{{ application.status.value }}</span></td>
+          <td class="nowrap">
+            {{ application.ats_before.overall_score }} &rarr;
+            <span class="score {{ application.ats_after.overall_score | score_band }}">{{ application.ats_after.overall_score }}</span>
+          </td>
+          <td class="nowrap">{{ application.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td>{% if application.output_dir %}<code>{{ application.output_dir }}</code>{% else %}<span class="subtle">not generated</span>{% endif %}</td>
+          <td class="nowrap"><a class="btn small" href="/applications/{{ application.id }}">Review</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if analysis %}
+<div class="card">
+  <h2>What the posting asks for</h2>
+  <div class="grid two">
+    <div>
+      <h3>Required</h3>
+      <div class="chips">
+        {% for skill in analysis.required_skills %}<span class="badge">{{ skill }}</span>{% endfor %}
+        {% if not analysis.required_skills %}<span class="subtle">None detected.</span>{% endif %}
+      </div>
+      <h3>Preferred</h3>
+      <div class="chips">
+        {% for skill in analysis.preferred_skills %}<span class="badge">{{ skill }}</span>{% endfor %}
+        {% if not analysis.preferred_skills %}<span class="subtle">None detected.</span>{% endif %}
+      </div>
+      <h3>Level</h3>
+      <p>
+        {{ analysis.seniority or 'Not stated' }}
+        {% if analysis.minimum_years %} · {{ analysis.minimum_years }}+ years{% endif %}
+      </p>
+    </div>
+    <div>
+      <h3>Responsibilities</h3>
+      <ul class="plain">
+        {% for item in analysis.responsibilities[:10] %}<li>{{ item }}</li>
+        {% else %}<li class="subtle">None detected.</li>{% endfor %}
+      </ul>
+      {% if analysis.warnings %}
+      <h3>Notes</h3>
+      <ul class="plain">
+        {% for item in analysis.warnings %}<li class="subtle">{{ item }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Job description</h2>
+  <p class="subtle">
+    Stored as plain text. JobOS treats posting text as untrusted data, never as instructions
+    to the model.
+  </p>
+  <pre>{{ job.description or 'No description was captured.' }}</pre>
+</div>
+{% endblock %}

@@ -1,0 +1,74 @@
+{% extends "base.html.j2" %}
+{% block title %}History — JobOS{% endblock %}
+{% block content %}
+<h1>History</h1>
+<p class="subtle">
+  Every optimisation attempt is kept, generated or not. Approved packages are immutable.
+</p>
+
+<div class="stats">
+  <div class="stat"><b>{{ rows | length }}</b><span>Attempts</span></div>
+  <div class="stat"><b>{{ generated }}</b><span>Generated</span></div>
+  <div class="stat"><b>{{ resume_versions | length }}</b><span>Resume versions</span></div>
+</div>
+
+<div class="card">
+  {% if rows %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th><th>Company</th><th>Role</th><th class="nowrap">Score</th>
+          <th>Rejected</th><th>Status</th><th class="nowrap">Created</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td>{{ row.application.id }}</td>
+          <td>{{ row.job.company if row.job else '—' }}</td>
+          <td>
+            {% if row.job %}<a href="/jobs/{{ row.job.id }}">{{ row.job.title }}</a>
+            {% else %}<span class="subtle">removed</span>{% endif %}
+          </td>
+          <td class="nowrap">
+            {{ row.application.ats_before.overall_score }} &rarr;
+            <span class="score {{ row.application.ats_after.overall_score | score_band }}">{{ row.application.ats_after.overall_score }}</span>
+          </td>
+          <td>{{ row.application.diff.rejected_edits | length }}</td>
+          <td><span class="badge">{{ row.application.status.value }}</span></td>
+          <td class="nowrap">{{ row.application.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td class="nowrap"><a class="btn small" href="/applications/{{ row.application.id }}">Review</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">Nothing yet. Optimise a job to create the first entry.</p>
+  {% endif %}
+</div>
+
+{% if resume_versions %}
+<div class="card">
+  <h2>Resume versions</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>ID</th><th>Source</th><th>Kind</th><th>Parent</th><th class="nowrap">Created</th><th>Hash</th></tr></thead>
+      <tbody>
+        {% for version in resume_versions %}
+        <tr>
+          <td>{{ version.id }}</td>
+          <td>{{ version.source_name }}</td>
+          <td><span class="badge">{{ 'master' if version.is_master else version.source_format }}</span></td>
+          <td>{{ version.parent_id or '—' }}</td>
+          <td class="nowrap">{{ version.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td><code>{{ version.content_hash[:12] }}</code></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

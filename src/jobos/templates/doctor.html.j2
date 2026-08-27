@@ -1,0 +1,92 @@
+{% extends "base.html.j2" %}
+{% block title %}Doctor — JobOS{% endblock %}
+{% block content %}
+<h1>Doctor</h1>
+<p class="subtle">
+  {% if health.ok %}Everything needed for the full workflow is present.
+  {% else %}Some checks failed. JobOS still runs, but the items below are degraded.{% endif %}
+</p>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Check</th><th class="nowrap">Status</th><th>Detail</th></tr></thead>
+      <tbody>
+        {% for check in health.checks %}
+        <tr>
+          <td class="nowrap">{{ check.name }}</td>
+          <td class="nowrap">
+            {% if check.ok %}<span class="ok">ok</span>{% else %}<span class="fail">check</span>{% endif %}
+          </td>
+          <td>{{ check.detail }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Configuration</h2>
+  <div class="grid two">
+    <div>
+      <h3>AI</h3>
+      <ul class="plain">
+        <li>Provider: <code>{{ config.ai.provider }}</code></li>
+        <li>Model: <code>{{ config.ai.model }}</code></li>
+        <li>Temperature: {{ config.ai.temperature }}</li>
+        <li>Input budget: {{ config.ai.max_input_chars }} chars</li>
+        <li>Output cap: {{ config.ai.max_output_tokens }} tokens</li>
+        <li>Max bullet rewrites: {{ config.ai.max_bullet_rewrites }}</li>
+        <li>Keep alive: {{ config.ai.keep_alive }}</li>
+      </ul>
+      <h3>Enabled AI tasks</h3>
+      <ul class="plain">
+        {% for name, enabled in config.ai.tasks.model_dump().items() %}
+        <li>{{ name }}: {% if enabled %}<span class="ok">on</span>{% else %}<span class="subtle">off (deterministic fallback)</span>{% endif %}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div>
+      <h3>Crawler</h3>
+      <ul class="plain">
+        <li>Concurrency: {{ config.crawler.concurrency }}</li>
+        <li>Per company limit: {{ config.crawler.per_company_limit }}</li>
+        <li>Timeout: {{ config.crawler.timeout_seconds }}s</li>
+        <li>Browser fallback: {{ 'on' if config.crawler.use_browser_fallback else 'off' }}</li>
+        <li>Respect robots.txt: {{ 'on' if config.crawler.respect_robots_txt else 'off' }}</li>
+      </ul>
+      <h3>Paths</h3>
+      <ul class="plain">
+        <li>Config: <code>{{ config.config_path }}</code></li>
+        <li>Data: <code>{{ config.data_dir }}</code></li>
+        <li>Output: <code>{{ config.output_dir }}</code></li>
+        <li>Theme: <code>{{ config.render.theme }}</code></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Configured companies ({{ config.companies | length }})</h2>
+  {% if config.companies %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Key</th><th>Name</th><th>Careers URL</th><th class="nowrap">Enabled</th></tr></thead>
+      <tbody>
+        {% for slug, company in config.companies.items() %}
+        <tr>
+          <td><code>{{ slug }}</code></td>
+          <td>{{ company.name }}</td>
+          <td><a href="{{ company.url }}" target="_blank" rel="noopener noreferrer">{{ company.url }}</a></td>
+          <td class="nowrap">{{ 'yes' if company.enabled else 'no' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">None configured. Add them under <code>companies:</code> in your config file.</p>
+  {% endif %}
+</div>
+{% endblock %}

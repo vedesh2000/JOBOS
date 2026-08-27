@@ -1,0 +1,144 @@
+{% extends "base.html.j2" %}
+{% block title %}Jobs — JobOS{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Jobs</h1>
+    <p class="subtle">{{ total }} matching {{ 'job' if total == 1 else 'jobs' }} stored locally.</p>
+  </div>
+  <div class="spacer"></div>
+  <form method="post" action="/crawl" class="actions" data-busy="Starting...">
+    <select name="company" aria-label="Company to crawl">
+      <option value="">All configured companies</option>
+      {% for slug, company in configured.items() %}
+      <option value="{{ slug }}">{{ company.name }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn primary" {% if crawl.running or not configured %}disabled{% endif %}>
+      Crawl
+    </button>
+  </form>
+</div>
+
+{% if not configured %}
+<div class="flash warn">
+  No companies configured yet. Add them under <code>companies:</code> in
+  <code>{{ config_path }}</code>, then crawl.
+</div>
+{% endif %}
+
+{% if crawl.running %}
+<div class="flash info">
+  Crawling {{ crawl.label }} since {{ crawl.started_at }}. Reload to see new jobs.
+</div>
+{% elif crawl.error %}
+<div class="flash error">Last crawl failed: {{ crawl.error }}</div>
+{% elif crawl.summary %}
+<div class="flash info">
+  Last crawl finished {{ crawl.finished_at }}: {{ crawl.summary.jobs_added }} added,
+  {{ crawl.summary.jobs_updated }} updated across
+  {{ crawl.summary.companies_succeeded }}/{{ crawl.summary.companies_requested }} companies.
+  {% if crawl.summary.errors %}
+  <ul>
+    {% for name, message in crawl.summary.errors.items() %}<li><b>{{ name }}</b>: {{ message }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="stats">
+  <div class="stat"><b>{{ total }}</b><span>Shown</span></div>
+  <div class="stat"><b>{{ scored }}</b><span>Scored</span></div>
+  <div class="stat"><b>{{ companies | length }}</b><span>Companies</span></div>
+  <div class="stat"><b>{{ min_score }}</b><span>Min score</span></div>
+</div>
+
+<div class="card">
+  <form method="get" action="/" class="filters">
+    <label class="field">Search
+      <input type="search" name="q" value="{{ query.q }}" placeholder="python, remote, aws, 5 years">
+    </label>
+    <label class="field">Company
+      <select name="company">
+        <option value="">Any</option>
+        {% for name in companies %}
+        <option value="{{ name }}" {{ 'selected' if query.company == name }}>{{ name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field">Location
+      <input type="text" name="location" value="{{ query.location }}" placeholder="Hyderabad">
+    </label>
+    <label class="field">Status
+      <select name="status">
+        <option value="">Any</option>
+        {% for value in statuses %}
+        <option value="{{ value }}" {{ 'selected' if query.status == value }}>{{ value }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field">Min score
+      <input type="number" name="min_score" min="0" max="100" value="{{ query.min_score }}">
+    </label>
+    <label class="field">Sort
+      <select name="sort">
+        {% for value, label in sorts %}
+        <option value="{{ value }}" {{ 'selected' if query.sort == value }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit" class="btn primary">Apply</button>
+    <a class="btn" href="/">Reset</a>
+  </form>
+</div>
+
+<div class="card">
+  {% if jobs %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Company</th>
+          <th>Role</th>
+          <th>Location</th>
+          <th class="nowrap">Match</th>
+          <th>Status</th>
+          <th class="nowrap">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for job in jobs %}
+        <tr>
+          <td>{{ job.company }}</td>
+          <td><a href="/jobs/{{ job.id }}">{{ job.title }}</a></td>
+          <td>{{ job.location or '—' }}</td>
+          <td class="nowrap">
+            {% if job.match_score is none %}
+            <span class="subtle">not scored</span>
+            {% else %}
+            <span class="score {{ job.match_score | score_band }}">{{ job.match_score }}</span>
+            <div class="bar"><i style="width: {{ job.match_score }}%"></i></div>
+            {% endif %}
+          </td>
+          <td><span class="badge">{{ job.status.value }}</span></td>
+          <td class="nowrap">
+            <div class="actions">
+              <a class="btn small" href="/jobs/{{ job.id }}">Open</a>
+              <form method="post" action="/jobs/{{ job.id }}/apply" class="inline">
+                <button type="submit" class="btn small primary">Apply</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">
+    No jobs match these filters.
+    {% if configured %}Try a crawl or clear the filters.{% endif %}
+  </p>
+  {% endif %}
+</div>
+{% endblock %}
