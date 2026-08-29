@@ -14,3 +14,8 @@ playwright-report/
 
 # User-local configuration; commit config.example.yaml instead.
 config.yaml
+
+# Personal resume data and rendered output — never commit real PII.
+*.resume.yaml
+*.resume.json
+final/

@@ -46,15 +46,45 @@ preferences:
   preferred_locations: [Remote, Hyderabad, Bengaluru]
   remote_only: false
   minimum_match_score: 45
+  # `search --preferred` applies these together. Title include/exclude and location
+  # work on any job; the years window only constrains jobs that have been analysed,
+  # so an unanalysed shortlist is never emptied by it.
+  roles_include: []              # title must contain one of these (empty = any)
+  roles_exclude: []              # title must contain none of these
+  min_years:                     # lower bound of a job's required years (blank = none)
+  max_years:                     # upper bound (blank = none)
+  seniority: ""                  # exact seniority for analysed jobs (empty = any)
 
 # Only these companies are ever crawled. Uncomment or add your own.
 # Greenhouse, Lever, Ashby, SmartRecruiters, and Workday boards use their public
 # JSON APIs. Anything else falls back to JSON-LD and conservative HTML parsing.
+#
+# Format:
+#   Simple:   stripe: https://boards.greenhouse.io/stripe
+#   Extended: microsoft:
+#               name: Microsoft
+#               url: https://careers.microsoft.com/
+#               enabled: true
+#
+# The India-focused boards below were verified to serve public JSON with
+# India-based roles. Company hiring changes over time, so run `jobos crawl` and
+# check the counts; remove any that stop returning jobs.
+# Uncomment the boards you want. This file ships with none active so JobOS never
+# crawls anything you did not choose.
 companies:
-  # Simple form:
-  # stripe: https://stripe.com/jobs
-  # Extended form:
-  # microsoft:
-  #   name: Microsoft
-  #   url: https://careers.microsoft.com/
-  #   enabled: true
+  # --- India product companies (Greenhouse) ---
+  # phonepe: https://boards.greenhouse.io/phonepe
+  # groww: https://boards.greenhouse.io/groww
+  # postman: https://boards.greenhouse.io/postman
+  # druva: https://boards.greenhouse.io/druva
+
+  # --- India product companies (Lever) ---
+  # meesho: https://jobs.lever.co/meesho
+  # cred: https://jobs.lever.co/cred
+  # zeta: https://jobs.lever.co/zeta
+  # mindtickle: https://jobs.lever.co/mindtickle
+  # netomi: https://jobs.lever.co/netomi
+
+  # --- Global companies that also hire in India ---
+  # stripe: https://boards.greenhouse.io/stripe
+  # airbnb: https://boards.greenhouse.io/airbnb

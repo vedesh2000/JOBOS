@@ -19,7 +19,7 @@ from jobos.agents import (
     SummaryAgent,
     TruthGuard,
 )
-from jobos.ai import AIClient
+from jobos.ai import AIClient, AIError
 from jobos.config import AppConfig
 from jobos.crawler import CareerCrawler
 from jobos.database import Database
@@ -62,6 +62,15 @@ class OptimizationOutcome:
     application: ApplicationView
     job: JobView
     warnings: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class BatchAnalysisResult:
+    """Outcome of analysing several jobs at once."""
+
+    requested: int
+    analysed: int
+    errors: dict[int, str] = field(default_factory=dict)
 
 
 class JobOSService:
@@ -160,13 +169,37 @@ class JobOSService:
         location: str = "",
         status: JobStatus | None = None,
         minimum_score: int | None = None,
+        max_years: float | None = None,
+        min_years: float | None = None,
+        seniority: str = "",
         sort: str = "newest",
         limit: int = 200,
         offset: int = 0,
         apply_preferences: bool = False,
     ) -> list[JobView]:
-        if apply_preferences and minimum_score is None:
-            minimum_score = self.config.preferences.minimum_match_score
+        prefs = self.config.preferences
+        # Under preferences the minimum score is applied leniently in Python so a
+        # not-yet-analysed job (NULL score) still appears in the shortlist. An
+        # explicit minimum_score is applied strictly in SQL as before.
+        lenient_score: int | None = None
+        if apply_preferences:
+            lenient_score = minimum_score if minimum_score is not None else prefs.minimum_match_score
+            minimum_score = None
+            if max_years is None:
+                max_years = prefs.max_years
+            if min_years is None:
+                min_years = prefs.min_years
+            if not seniority:
+                seniority = prefs.seniority
+        # Preference/experience/role filters run in Python, so fetch a wide set and
+        # re-apply the limit afterwards.
+        needs_python_filter = (
+            max_years is not None
+            or min_years is not None
+            or bool(seniority)
+            or apply_preferences
+        )
+        db_limit = limit if not needs_python_filter else 5_000
         jobs = self.database.list_jobs(
             search=search,
             company=company,
@@ -174,12 +207,85 @@ class JobOSService:
             status=status,
             minimum_score=minimum_score,
             sort=sort,
-            limit=limit,
+            limit=db_limit,
             offset=offset,
         )
-        if apply_preferences and self.config.preferences.remote_only:
-            jobs = [job for job in jobs if "remote" in job.location.casefold()]
+        if apply_preferences:
+            if prefs.remote_only:
+                jobs = [job for job in jobs if "remote" in job.location.casefold()]
+            if prefs.roles_include or prefs.roles_exclude:
+                jobs = self._filter_by_title(jobs, prefs.roles_include, prefs.roles_exclude)
+            if lenient_score:
+                jobs = [
+                    job
+                    for job in jobs
+                    if job.match_score is None or job.match_score >= lenient_score
+                ]
+        if max_years is not None or min_years is not None or seniority:
+            # Under preferences, unanalysed jobs are kept (requirement unknown until
+            # analysis); an explicit flag is strict and drops them.
+            jobs = self._filter_by_experience(
+                jobs, max_years, min_years, seniority, lenient=apply_preferences
+            )
+        if needs_python_filter:
+            jobs = jobs[:limit]
         return jobs
+
+    @staticmethod
+    def _filter_by_title(
+        jobs: list[JobView], include: list[str], exclude: list[str]
+    ) -> list[JobView]:
+        """Keep jobs whose title matches the role include/exclude keyword lists."""
+        includes = [term.casefold() for term in include if term.strip()]
+        excludes = [term.casefold() for term in exclude if term.strip()]
+        result: list[JobView] = []
+        for job in jobs:
+            title = job.title.casefold()
+            if includes and not any(term in title for term in includes):
+                continue
+            if any(term in title for term in excludes):
+                continue
+            result.append(job)
+        return result
+
+    @staticmethod
+    def _filter_by_experience(
+        jobs: list[JobView],
+        max_years: float | None,
+        min_years: float | None,
+        seniority: str,
+        lenient: bool = False,
+    ) -> list[JobView]:
+        """Filter jobs by required years and seniority from the stored analysis.
+
+        With ``lenient`` (the preferences path), a job that has not been analysed is
+        kept, since its requirement is unknown until analysis. Without it (an explicit
+        flag), an unanalysed or requirement-less job is dropped.
+        """
+        wanted_level = seniority.strip().casefold()
+        result: list[JobView] = []
+        for job in jobs:
+            analysis = job.analysis
+            if analysis is None:
+                if lenient:
+                    result.append(job)
+                continue
+            if max_years is not None or min_years is not None:
+                years = analysis.minimum_years
+                if years is None:
+                    if lenient:
+                        result.append(job)
+                    continue
+                if max_years is not None and years > max_years:
+                    continue
+                if min_years is not None and years < min_years:
+                    continue
+            if wanted_level and analysis.seniority.casefold() != wanted_level:
+                if lenient and not analysis.seniority:
+                    result.append(job)
+                continue
+            result.append(job)
+        return result
 
     def companies_with_jobs(self) -> list[str]:
         return self.database.companies()
@@ -206,6 +312,23 @@ class JobOSService:
         report = self.ats.score(master.resume, analysis, job, resume_version_id=master.id)
         self.database.save_ats_report(job_id, master.id, report)
         return self.require_job(job_id), analysis, report
+
+    async def analyse_jobs(self, job_ids: list[int]) -> BatchAnalysisResult:
+        """Analyse and score several jobs in sequence, isolating per-job failures.
+
+        One bad posting should not abort the batch, so each failure is recorded and
+        the run continues. Scores are persisted, so `search --sort score` reflects
+        them afterwards.
+        """
+        analysed = 0
+        errors: dict[int, str] = {}
+        for job_id in job_ids:
+            try:
+                await self.analyse_job(job_id)
+                analysed += 1
+            except (ServiceError, LookupError, AIError) as exc:
+                errors[job_id] = str(exc)
+        return BatchAnalysisResult(requested=len(job_ids), analysed=analysed, errors=errors)
 
     async def analysis_for(self, job_id: int) -> tuple[JobView, JobAnalysis]:
         """Reuse a stored analysis when present so repeat work avoids AI calls."""

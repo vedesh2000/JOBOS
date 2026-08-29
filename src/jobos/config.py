@@ -57,9 +57,26 @@ class CrawlerSettings(StrictModel):
 
 
 class PreferenceSettings(StrictModel):
+    """What counts as a job that fits you, applied together by `search --preferred`.
+
+    Title include/exclude and location work on any job. The years window only
+    constrains jobs that have been analysed (the requirement is extracted during
+    analysis); unanalysed jobs are not dropped by it, so a pre-analysis shortlist is
+    never empty.
+    """
+
     preferred_locations: list[str] = Field(default_factory=list, max_length=100)
     remote_only: bool = False
     minimum_match_score: int = Field(default=45, ge=0, le=100)
+    # Title must contain at least one of these (case-insensitive). Empty = allow any.
+    roles_include: list[str] = Field(default_factory=list, max_length=100)
+    # Title must contain none of these (case-insensitive).
+    roles_exclude: list[str] = Field(default_factory=list, max_length=100)
+    # Required-years window for analysed jobs. None = no bound on that side.
+    min_years: float | None = Field(default=None, ge=0, le=60)
+    max_years: float | None = Field(default=None, ge=0, le=60)
+    # Optional exact seniority match for analysed jobs. Empty = any.
+    seniority: str = Field(default="", max_length=100)
 
 
 class CompanySettings(StrictModel):

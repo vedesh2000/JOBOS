@@ -9,7 +9,9 @@ import shutil
 from pathlib import Path
 from typing import Protocol
 
+import yaml
 from docx import Document
+from pydantic import ValidationError
 from pypdf import PdfReader
 
 from jobos.config import AppConfig
@@ -27,7 +29,8 @@ from jobos.models import (
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_RESUME_CHARS = 150_000
-SUPPORTED_SUFFIXES = {".pdf", ".docx", ".md", ".markdown"}
+STRUCTURED_SUFFIXES = {".yaml", ".yml", ".json"}
+SUPPORTED_SUFFIXES = {".pdf", ".docx", ".md", ".markdown"} | STRUCTURED_SUFFIXES
 
 EMAIL_RE = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}")
 PHONE_RE = re.compile(r"(?<!\w)(?:\+?\d[\d ()-]{7,}\d)(?!\w)")
@@ -325,6 +328,44 @@ def _parse_education(lines: list[str]) -> list[Education]:
     return result
 
 
+def dump_structured_resume_yaml(resume: StructuredResume) -> str:
+    """Serialize a resume to editable YAML for the tweak-and-re-render loop."""
+    data = resume.model_dump(mode="json")
+    return yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=100)
+
+
+def load_structured_resume(filename: str, content: bytes) -> StructuredResume:
+    """Load a hand-authored YAML/JSON resume directly, with no parsing or AI.
+
+    This is the reliable import path: the file is already structured, so JobOS only
+    validates it against the schema and reports precise, actionable errors instead of
+    guessing at a PDF layout.
+    """
+    if not content:
+        raise ResumeParseError("resume file is empty")
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise ResumeParseError(f"resume exceeds the {MAX_UPLOAD_BYTES // 1024 // 1024} MB limit")
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise ResumeParseError("resume file must be UTF-8 encoded text") from exc
+    try:
+        # yaml.safe_load parses JSON too, and never executes arbitrary tags.
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise ResumeParseError(f"could not parse structured resume: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ResumeParseError("structured resume must be a mapping of fields at the top level")
+    try:
+        return StructuredResume.model_validate(data)
+    except ValidationError as exc:
+        problems = "; ".join(
+            f"{'.'.join(str(part) for part in error['loc'])}: {error['msg']}"
+            for error in exc.errors()[:5]
+        )
+        raise ResumeParseError(f"structured resume is not valid: {problems}") from exc
+
+
 def structure_resume_offline(text: str) -> StructuredResume:
     """Conservatively map recognizable sections; preserve unknown content separately."""
     preamble, sections = _split_sections(text)
@@ -406,6 +447,8 @@ class ResumeImporter:
         self.structurer = structurer
 
     async def import_bytes(self, filename: str, content: bytes) -> ResumeImportResult:
+        if Path(filename).suffix.casefold() in STRUCTURED_SUFFIXES:
+            return self._import_structured(filename, content)
         source_text = extract_resume_text(filename, content)
         warnings: list[str] = []
         resume: StructuredResume | None = None
@@ -428,6 +471,22 @@ class ResumeImporter:
                 "Review the structured resume before optimizing."
             )
 
+        return self._store(filename, content, resume, source_text, warnings)
+
+    def _import_structured(self, filename: str, content: bytes) -> ResumeImportResult:
+        """Import a hand-authored YAML/JSON resume with no extraction or AI step."""
+        resume = load_structured_resume(filename, content)
+        source_text = content.decode("utf-8-sig")
+        return self._store(filename, content, resume, source_text, warnings=[])
+
+    def _store(
+        self,
+        filename: str,
+        content: bytes,
+        resume: StructuredResume,
+        source_text: str,
+        warnings: list[str],
+    ) -> ResumeImportResult:
         digest = hashlib.sha256(content).hexdigest()
         suffix = Path(filename).suffix.casefold()
         destination = self.config.uploads_dir / f"{digest}{suffix}"

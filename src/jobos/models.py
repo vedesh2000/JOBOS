@@ -124,6 +124,10 @@ class StructuredResume(StrictModel):
     contact: Contact
     summary: str = Field(default="", max_length=4_000)
     skills: list[str] = Field(default_factory=list, max_length=300)
+    # Optional presentation-only grouping of skills (e.g. Backend, Frontend). This
+    # never affects scoring or optimisation, which always use the flat `skills`
+    # list; it only labels skills into categories when rendering the resume.
+    skill_groups: dict[str, list[str]] = Field(default_factory=dict)
     experience: list[Experience] = Field(default_factory=list, max_length=100)
     projects: list[Project] = Field(default_factory=list, max_length=100)
     education: list[Education] = Field(default_factory=list, max_length=50)

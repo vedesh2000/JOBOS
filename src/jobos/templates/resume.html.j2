@@ -12,7 +12,7 @@
   body {
     font-family: {{ font_stack }};
     font-size: {{ base_font_size }};
-    line-height: 1.42;
+    line-height: {{ line_height | default('1.42') }};
     color: #111;
     margin: 0;
     -webkit-font-smoothing: antialiased;
@@ -22,24 +22,26 @@
     font-size: 0.95em;
     text-transform: uppercase;
     letter-spacing: 0.9px;
-    margin: 15px 0 6px;
+    margin: {{ section_gap | default('15px') }} 0 6px;
     padding-bottom: 3px;
     border-bottom: 1px solid #999;
   }
-  h3 { font-size: 1em; margin: 9px 0 1px; }
+  h3 { font-size: 1em; margin: {{ entry_head_gap | default('9px') }} 0 1px; }
   p { margin: 0 0 6px; }
   ul { margin: 4px 0 6px; padding-left: 17px; }
-  li { margin-bottom: 3px; }
+  li { margin-bottom: {{ li_gap | default('3px') }}; }
   a { color: #111; text-decoration: none; }
   .contact { font-size: 0.92em; margin-bottom: 2px; }
   .contact span:not(:last-child)::after { content: " • "; color: #666; }
-  .entry { margin-bottom: 8px; }
+  .entry { margin-bottom: {{ entry_gap | default('8px') }}; }
   .entry-head { display: flex; justify-content: space-between; gap: 12px; }
   .entry-meta { font-size: 0.9em; color: #333; white-space: nowrap; }
   .entry-sub { font-size: 0.92em; color: #333; }
   .inline-list { margin: 0 0 6px; }
   .tech { font-size: 0.9em; color: #333; }
-  section { break-inside: avoid; }
+  /* Keep a single entry from splitting, but let long sections flow across a page
+     break so a large section does not get pushed wholesale onto the next page. */
+  h2 { break-after: avoid; }
   .entry { break-inside: avoid; }
 </style>
 </head>
@@ -58,13 +60,6 @@
 <section>
   <h2>Summary</h2>
   <p>{{ resume.summary }}</p>
-</section>
-{% endif %}
-
-{% if resume.skills %}
-<section>
-  <h2>Skills</h2>
-  <p class="inline-list">{{ resume.skills | join(' • ') }}</p>
 </section>
 {% endif %}
 
@@ -110,6 +105,40 @@
 </section>
 {% endif %}
 
+{% if resume.skill_groups %}
+<section>
+  <h2>Skills</h2>
+  {% for label, items in resume.skill_groups.items() %}
+  {% if items %}<p class="inline-list"><strong>{{ label }}:</strong> {{ items | join(', ') }}</p>{% endif %}
+  {% endfor %}
+</section>
+{% elif resume.skills %}
+<section>
+  <h2>Skills</h2>
+  <p class="inline-list">{{ resume.skills | join(' • ') }}</p>
+</section>
+{% endif %}
+
+{% if resume.achievements %}
+<section>
+  <h2>Achievements</h2>
+  <ul>
+    {% for item in resume.achievements %}<li>{{ item.text }}</li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% if resume.certifications %}
+<section>
+  <h2>Certifications</h2>
+  <p class="inline-list">
+    {%- for item in resume.certifications -%}
+    {{ item.name }}{% if item.issuer %} ({{ item.issuer }}){% endif %}{% if item.date %} ({{ item.date }}){% endif %}{% if not loop.last %} • {% endif %}
+    {%- endfor -%}
+  </p>
+</section>
+{% endif %}
+
 {% if resume.education %}
 <section>
   <h2>Education</h2>
@@ -129,26 +158,6 @@
     {% endif %}
   </div>
   {% endfor %}
-</section>
-{% endif %}
-
-{% if resume.certifications %}
-<section>
-  <h2>Certifications</h2>
-  <ul>
-    {% for item in resume.certifications %}
-    <li>{{ item.name }}{% if item.issuer %} — {{ item.issuer }}{% endif %}{% if item.date %} ({{ item.date }}){% endif %}</li>
-    {% endfor %}
-  </ul>
-</section>
-{% endif %}
-
-{% if resume.achievements %}
-<section>
-  <h2>Achievements</h2>
-  <ul>
-    {% for item in resume.achievements %}<li>{{ item.text }}</li>{% endfor %}
-  </ul>
 </section>
 {% endif %}
 

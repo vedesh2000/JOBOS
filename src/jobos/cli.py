@@ -16,7 +16,7 @@ from rich.table import Table
 from jobos.ai import AIError
 from jobos.config import AppConfig, load_config
 from jobos.crawler import CrawlError
-from jobos.models import JobStatus, JobView, StructuredResume
+from jobos.models import JobStatus, JobView
 from jobos.renderer import (
     RenderError,
     ResumeRenderer,
@@ -24,7 +24,11 @@ from jobos.renderer import (
     diff_to_markdown,
     resume_to_markdown,
 )
-from jobos.resume import ResumeParseError
+from jobos.resume import (
+    ResumeParseError,
+    dump_structured_resume_yaml,
+    load_structured_resume,
+)
 from jobos.services import JobOSService, ServiceError
 
 app = typer.Typer(
@@ -323,6 +327,18 @@ def search(
     location: Annotated[str, typer.Option(help="Location substring.")] = "",
     status: Annotated[str | None, typer.Option(help="new, saved, opened, applied, ignored.")] = None,
     min_score: Annotated[int | None, typer.Option(help="Minimum match score.")] = None,
+    max_years: Annotated[
+        float | None,
+        typer.Option(help="Max required years of experience (analysed jobs only)."),
+    ] = None,
+    min_years: Annotated[
+        float | None,
+        typer.Option(help="Min required years of experience (analysed jobs only)."),
+    ] = None,
+    seniority: Annotated[
+        str,
+        typer.Option(help="Filter by seniority, e.g. Senior, Staff, Lead (analysed jobs only)."),
+    ] = "",
     sort: Annotated[str, typer.Option(help="newest, oldest, score, company, title.")] = "newest",
     limit: Annotated[int, typer.Option(help="Maximum rows.")] = 50,
     preferred: Annotated[
@@ -341,6 +357,9 @@ def search(
         location=location,
         status=JobStatus(status) if status else None,
         minimum_score=min_score,
+        max_years=max_years,
+        min_years=min_years,
+        seniority=seniority,
         sort=sort,
         limit=limit,
         apply_preferences=preferred,
@@ -377,6 +396,55 @@ def analyse(
     if analysis.minimum_years:
         console.print(f"Experience asked for: {analysis.minimum_years:g}+ years")
     console.print(ats_report_to_markdown(report, job))
+
+
+@app.command("analyse-all")
+def analyse_all(
+    query: Annotated[str, typer.Argument(help="Free text to select jobs, e.g. backend.")] = "",
+    company: Annotated[str, typer.Option(help="Exact company name.")] = "",
+    location: Annotated[str, typer.Option(help="Location substring, e.g. India.")] = "",
+    status: Annotated[str | None, typer.Option(help="new, saved, opened, applied, ignored.")] = None,
+    limit: Annotated[int, typer.Option(help="Maximum jobs to analyse.")] = 25,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Analyse and score every job matching a filter, so you can sort by match score.
+
+    Analysis is what produces match scores and the years/seniority data, so run this
+    over a filtered set (for example `--location India backend`), then narrow with
+    `search --sort score --max-years 6`.
+    """
+    service = _service()
+    if status is not None and status not in set(JobStatus):
+        errors.print(f"[red]Unknown status {status!r}.[/red]")
+        raise typer.Exit(2)
+    jobs = service.search_jobs(
+        search=query,
+        company=company,
+        location=location,
+        status=JobStatus(status) if status else None,
+        limit=limit,
+    )
+    if not jobs:
+        console.print("[yellow]No jobs matched.[/yellow] Try `jobos crawl` or a broader filter.")
+        raise typer.Exit(1)
+    result = _run(service.analyse_jobs([job.id for job in jobs]))
+    if json_output:
+        _emit(
+            {
+                "requested": result.requested,
+                "analysed": result.analysed,
+                "errors": {str(job_id): message for job_id, message in result.errors.items()},
+            }
+        )
+        raise typer.Exit(0 if not result.errors else 1)
+    console.print(
+        f"[green]Analysed {result.analysed}[/green] of {result.requested} jobs. "
+        "Now try [bold]jobos search --sort score[/bold]."
+    )
+    for job_id, message in result.errors.items():
+        console.print(f"[red]job {job_id}:[/red] {message}")
+    if result.errors:
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -504,19 +572,27 @@ def generate(
 
 @app.command()
 def render(
-    resume_json: Annotated[Path, typer.Argument(help="A resume.json file.")],
+    resume_file: Annotated[
+        Path, typer.Argument(help="A resume .yaml, .yml, or .json file.")
+    ],
     out: Annotated[Path, typer.Option("--out", "-o", help="Output directory.")] = Path("."),
-    theme: Annotated[str | None, typer.Option(help="classic, compact, or letter.")] = None,
+    theme: Annotated[
+        str | None, typer.Option(help="classic, compact, letter, or onepager.")
+    ] = None,
 ) -> None:
-    """Render a resume.json to Markdown, HTML, and PDF."""
+    """Render a resume file (YAML or JSON) to Markdown, HTML, and PDF.
+
+    This is the quick tweak loop: edit your resume YAML, re-run `render`, and get an
+    updated PDF without touching the job pipeline or the stored master.
+    """
     config = _config()
-    if not resume_json.is_file():
-        errors.print(f"[red]No such file: {resume_json}[/red]")
+    if not resume_file.is_file():
+        errors.print(f"[red]No such file: {resume_file}[/red]")
         raise typer.Exit(1)
     try:
-        resume = StructuredResume.model_validate_json(resume_json.read_text(encoding="utf-8"))
-    except ValueError as exc:
-        errors.print(f"[red]{resume_json} is not a valid JobOS resume.json:[/red] {exc}")
+        resume = load_structured_resume(resume_file.name, resume_file.read_bytes())
+    except ResumeParseError as exc:
+        errors.print(f"[red]{resume_file} is not a valid JobOS resume:[/red] {exc}")
         raise typer.Exit(1) from exc
     renderer = _guard(lambda: ResumeRenderer(theme or config.render.theme))
     html = renderer.render_html(resume)
@@ -532,6 +608,32 @@ def render(
     console.print(f"[green]Rendered to {out.resolve()}[/green]")
     for name in (*written, "resume.pdf"):
         console.print(f"  {name}")
+
+
+@app.command()
+def export(
+    application_id: Annotated[
+        int, typer.Argument(help="Application ID from `jobos history`.")
+    ],
+    out: Annotated[
+        Path, typer.Option("--out", "-o", help="Where to write the editable YAML.")
+    ] = Path("tailored.resume.yaml"),
+) -> None:
+    """Export a tailored resume as editable YAML so you can tweak, then re-render.
+
+    Use this after `generate` when you want to adjust the tailored resume by hand:
+      1. jobos export <application_id> --out tailored.resume.yaml
+      2. edit tailored.resume.yaml
+      3. jobos render tailored.resume.yaml --out final
+    No re-optimisation needed; you are editing the already-tailored resume directly.
+    """
+    service = _service()
+    application = _guard(lambda: service.require_application(application_id))
+    out.write_text(dump_structured_resume_yaml(application.optimized_resume), encoding="utf-8")
+    console.print(f"[green]Exported tailored resume to {out.resolve()}[/green]")
+    console.print(
+        f"Edit it, then run [bold]jobos render {out} --out final[/bold] for an updated PDF."
+    )
 
 
 @app.command()

@@ -46,6 +46,21 @@ THEMES: Final[dict[str, dict[str, str]]] = {
         "base_font_size": "10.5pt",
         "font_stack": '"Times New Roman", Times, Georgia, serif',
     },
+    "onepager": {
+        "page_size": "A4",
+        "margin": "6mm 9mm",
+        "base_font_size": "8.2pt",
+        "font_stack": '-apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif',
+        # Tight vertical rhythm so dense content still fits one page. Single column
+        # and real selectable text keep it ATS-parseable.
+        "line_height": "1.18",
+        "section_gap": "6px",
+        "entry_head_gap": "4px",
+        "entry_gap": "3px",
+        "li_gap": "1px",
+        # Scale borderline content back onto a single page (see _one_page_scale).
+        "single_page": "true",
+    },
 }
 
 
@@ -273,16 +288,21 @@ class ResumeRenderer:
     async def render_pdf(self, html: str) -> bytes:
         """Print the resume with Chromium, then verify the text actually extracts."""
         options = THEMES[self.theme]
+        fit_one_page = options.get("single_page") == "true"
         try:
             async with async_playwright() as playwright:
                 browser = await playwright.chromium.launch(headless=True)
                 try:
                     page = await browser.new_page()
                     await page.set_content(html, wait_until="load")
+                    scale = 1.0
+                    if fit_one_page:
+                        scale = await self._one_page_scale(page)
                     pdf_bytes = await page.pdf(
                         format=options["page_size"],
                         print_background=True,
                         prefer_css_page_size=True,
+                        scale=scale,
                     )
                 finally:
                     await browser.close()
@@ -293,6 +313,27 @@ class ResumeRenderer:
             ) from exc
         verify_pdf(pdf_bytes)
         return pdf_bytes
+
+    @staticmethod
+    async def _one_page_scale(page: object) -> float:
+        """Find the largest print scale that keeps the resume on a single page.
+
+        Chromium's print pagination breaks earlier than any DOM height measurement
+        predicts, so rather than estimate, this renders at decreasing scales and
+        returns the first that produces exactly one page. It never goes below 0.8,
+        because past that the 8pt base font is too small to read and trimming content
+        is the honest fix instead.
+        """
+        for scale in (1.0, 0.95, 0.92, 0.9, 0.87, 0.84, 0.8):
+            pdf = await page.pdf(  # type: ignore[attr-defined]
+                format="A4",
+                print_background=True,
+                prefer_css_page_size=True,
+                scale=scale,
+            )
+            if len(PdfReader(io.BytesIO(pdf)).pages) == 1:
+                return scale
+        return 0.8
 
 
 def verify_pdf(pdf_bytes: bytes, *, expected_text: str = "") -> str:
