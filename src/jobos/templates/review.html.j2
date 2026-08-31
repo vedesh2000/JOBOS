@@ -30,10 +30,25 @@
   Generated in <code>{{ application.output_dir }}</code>.
   <div class="actions" style="margin-top:8px">
     {% for name in artifacts %}
-    <a class="btn small" href="/applications/{{ application.id }}/files/{{ name }}">{{ name }}</a>
+    <a class="btn small" href="/applications/{{ application.id }}/files/{{ name }}" target="_blank" rel="noopener">{{ name }}</a>
     {% endfor %}
+    {% if 'resume.pdf' in artifacts %}
+    <a class="btn small" href="/applications/{{ application.id }}/files/resume.pdf?download=1">Download PDF</a>
+    {% endif %}
   </div>
 </div>
+
+{% if 'resume.pdf' in artifacts %}
+<div class="card">
+  <h2>Tailored resume</h2>
+  <object class="pdf-preview" data="/applications/{{ application.id }}/files/resume.pdf" type="application/pdf">
+    <p class="subtle">
+      Your browser will not display the PDF inline.
+      <a href="/applications/{{ application.id }}/files/resume.pdf" target="_blank" rel="noopener">Open it in a new tab</a>.
+    </p>
+  </object>
+</div>
+{% endif %}
 {% else %}
 <div class="card">
   <div class="actions">

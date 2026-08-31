@@ -24,7 +24,7 @@ from jobos.agents import (
 )
 from jobos.ai import AIClient, AIError
 from jobos.ats import mentioned_skills
-from jobos.config import AppConfig, CompanySettings
+from jobos.config import AppConfig, CompanySettings, append_company, slugify_company
 from jobos.crawler import CareerCrawler, derive_company_name
 from jobos.database import Database
 from jobos.models import (
@@ -217,6 +217,26 @@ class JobOSService:
         )
         crawler = CareerCrawler(self.config, self.database)
         return await crawler.crawl_settings(settings)
+
+    def add_company(self, url: str, name: str | None = None) -> str:
+        """Persist a company under `companies:` in config.yaml and load it immediately.
+
+        Returns the slug it was stored as. The running process picks the company up
+        without a restart, so it can be crawled straight away.
+        """
+        clean = self._validate_crawl_url(url)
+        display = (name or "").strip() or derive_company_name(clean)
+        slug = slugify_company(display)
+        if slug in self.config.companies:
+            raise ServiceError(f"{display} is already configured as {slug!r}.")
+        try:
+            append_company(self.config.config_path, slug, display, clean)
+        except OSError as exc:
+            raise ServiceError(f"Could not write to the config file: {exc}") from exc
+        except ValueError as exc:
+            raise ServiceError(str(exc)) from exc
+        self.config.companies[slug] = CompanySettings(name=display, url=clean)
+        return slug
 
     @staticmethod
     def _validate_crawl_url(url: str) -> str:

@@ -86,6 +86,52 @@ main { max-width: 1180px; margin: 0 auto; padding: 22px 20px 60px; }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
 .url-input { min-width: 240px; }
 .crawl-hint { margin: 6px 0 14px; }
+.markdown-body { max-width: 62rem; line-height: 1.65; }
+.markdown-body h1 { margin: 0 0 12px; }
+.markdown-body h2 { margin: 30px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.markdown-body h3 { margin: 22px 0 8px; }
+.markdown-body p, .markdown-body ul, .markdown-body ol { margin: 10px 0; }
+.markdown-body li { margin: 4px 0; }
+.markdown-body code {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 0.88em;
+}
+.markdown-body pre {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  overflow-x: auto;
+}
+.markdown-body pre code { background: none; border: 0; padding: 0; }
+.markdown-body table { width: 100%; border-collapse: collapse; margin: 14px 0; }
+.markdown-body th, .markdown-body td {
+  border: 1px solid var(--border);
+  padding: 7px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.markdown-body th { background: var(--surface-2); }
+.markdown-body blockquote {
+  margin: 12px 0;
+  padding: 2px 14px;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+}
+.markdown-body hr { border: 0; border-top: 1px solid var(--border); margin: 26px 0; }
+.add-company summary { cursor: pointer; font-weight: 600; }
+.add-company summary:hover { color: var(--accent); }
+.pdf-preview {
+  width: 100%;
+  height: 78vh;
+  min-height: 460px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
 
 /* surfaces */
 .card {

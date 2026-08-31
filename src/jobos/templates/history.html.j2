@@ -54,7 +54,7 @@
   <h2>Resume versions</h2>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>ID</th><th>Source</th><th>Kind</th><th>Parent</th><th class="nowrap">Created</th><th>Hash</th></tr></thead>
+      <thead><tr><th>ID</th><th>Source</th><th>Kind</th><th>Parent</th><th class="nowrap">Created</th><th>Hash</th><th class="nowrap">View</th></tr></thead>
       <tbody>
         {% for version in resume_versions %}
         <tr>
@@ -64,6 +64,13 @@
           <td>{{ version.parent_id or '—' }}</td>
           <td class="nowrap">{{ version.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
           <td><code>{{ version.content_hash[:12] }}</code></td>
+          <td class="nowrap">
+            <div class="actions">
+              <a class="btn small" href="/resume/{{ version.id }}.html" target="_blank" rel="noopener">View</a>
+              <a class="btn small" href="/resume/{{ version.id }}.pdf" target="_blank" rel="noopener">PDF</a>
+              <a class="btn small" href="/resume/{{ version.id }}.json" target="_blank" rel="noopener">JSON</a>
+            </div>
+          </td>
         </tr>
         {% endfor %}
       </tbody>

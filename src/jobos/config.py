@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Any, Literal, Self
 
@@ -176,6 +177,75 @@ class AppConfig(StrictModel):
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.uploads_dir.mkdir(parents=True, exist_ok=True)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+
+
+_SLUG_SAFE = re.compile(r"[^a-z0-9]+")
+_ADDED_MARKER = "# --- added from the dashboard / add-company ---"
+
+
+def slugify_company(name: str) -> str:
+    """Turn a display name into a config key: lowercase, alphanumeric, underscores."""
+    slug = _SLUG_SAFE.sub("_", name.strip().casefold()).strip("_")
+    return slug or "company"
+
+
+def append_company(config_path: Path, slug: str, name: str, url: str) -> None:
+    """Add a company under `companies:` by editing the YAML text in place.
+
+    The file is rewritten as text rather than dumped from parsed YAML because a
+    round-trip through PyYAML would discard every comment, and this config carries
+    substantial commentary (per-board role counts, why boards are excluded) that is
+    the main reason it is readable. The new entry is inserted after the last line
+    belonging to the `companies:` block.
+
+    Raises ValueError if the file has no `companies:` mapping or the slug is taken.
+    """
+    validate_web_url(url)
+    original = config_path.read_text(encoding="utf-8")
+    lines = original.splitlines()
+    start = next(
+        (i for i, line in enumerate(lines) if re.match(r"^companies:\s*(#.*)?$", line)), None
+    )
+    if start is None:
+        raise ValueError(
+            "could not find a `companies:` block in the config, so the entry was not added"
+        )
+    if re.search(rf"^\s+{re.escape(slug)}\s*:", original, re.MULTILINE):
+        raise ValueError(f"{slug!r} is already in the config")
+
+    # The block runs until the first non-blank line that is not indented. An
+    # unindented comment ends it too: it introduces whatever follows rather than
+    # belonging to the companies mapping.
+    end = len(lines)
+    for i in range(start + 1, len(lines)):
+        if lines[i].strip() and not lines[i].startswith((" ", "\t")):
+            end = i
+            break
+
+    entry = f"  {slug}: {url}"
+    if name != slug.replace("_", " ").title():
+        # A custom display name needs the mapping form; a derived one does not, since
+        # the loader title-cases the slug to the same thing.
+        entry = f"  {slug}:\n    name: {name}\n    url: {url}"
+
+    # Added companies collect under one marker at the end of the block. Appending
+    # after the last entry instead would drop, say, an Ashby board into the middle of
+    # the Workday section, and appending after the block's trailing prose would make
+    # the new line look like part of that comment.
+    marker_index = next(
+        (i for i in range(start + 1, end) if lines[i].strip() == _ADDED_MARKER), None
+    )
+    if marker_index is None:
+        insert_at = end
+        while insert_at > start + 1 and not lines[insert_at - 1].strip():
+            insert_at -= 1  # keep any blank separator below the new section
+        lines[insert_at:insert_at] = ["", f"  {_ADDED_MARKER}", entry]
+    else:
+        insert_at = marker_index + 1
+        while insert_at < end and lines[insert_at].startswith((" ", "\t")) and lines[insert_at].strip():
+            insert_at += 1
+        lines.insert(insert_at, entry)
+    config_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def load_config(path: str | Path | None = None) -> AppConfig:

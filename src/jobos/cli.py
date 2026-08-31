@@ -333,6 +333,34 @@ def crawl(
         raise typer.Exit(1)
 
 
+@app.command("add-company")
+def add_company(
+    url: Annotated[str, typer.Argument(help="Career page or job board URL.")],
+    name: Annotated[
+        str, typer.Option(help="Display name. Derived from the URL if omitted.")
+    ] = "",
+    crawl_now: Annotated[
+        bool, typer.Option("--crawl", help="Crawl it immediately after adding.")
+    ] = False,
+) -> None:
+    """Add a company to config.yaml so it is crawled from now on."""
+    service = _service()
+    try:
+        slug = service.add_company(url, name or None)
+    except ServiceError as exc:
+        errors.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    company = service.config.companies[slug]
+    console.print(f"[green]Added[/green] {company.name} as '{slug}' in {service.config.config_path}.")
+    if crawl_now:
+        summary = _run(service.crawl(slug))
+        console.print(
+            f"[green]{summary.jobs_added} added[/green], {summary.jobs_updated} updated."
+        )
+        for company_name, message in summary.errors.items():
+            console.print(f"[red]{company_name}:[/red] {message}")
+
+
 @app.command()
 def prune(
     days: Annotated[

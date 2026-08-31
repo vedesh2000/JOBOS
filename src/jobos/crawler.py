@@ -473,18 +473,23 @@ class CareerCrawler:
         url = f"https://api.smartrecruiters.com/v1/companies/{account}/postings?limit=100"
         payload = await self._json_request("GET", url, honor_robots=False)
         content = _list_field(payload, "content")
+        listed = [
+            item
+            for item in content[: self.config.crawler.per_company_limit]
+            if isinstance(item, dict) and _as_text(item.get("id"))
+        ]
+        # One detail request per posting. Fetched concurrently because doing this in
+        # series dominated the crawl (measured ~0.4s per posting); the shared request
+        # semaphore still bounds how many are in flight.
+        base = f"https://api.smartrecruiters.com/v1/companies/{account}/postings/"
+        details = await self._gather_json(
+            [f"{base}{_as_text(item.get('id'))}" for item in listed]
+        )
         jobs: list[JobData] = []
-        for item in content[: self.config.crawler.per_company_limit]:
-            if not isinstance(item, dict):
+        for item, detail in zip(listed, details, strict=True):
+            if detail is None:
                 continue
             job_id = _as_text(item.get("id"))
-            if not job_id:
-                continue
-            detail = await self._json_request(
-                "GET",
-                f"https://api.smartrecruiters.com/v1/companies/{account}/postings/{job_id}",
-                honor_robots=False,
-            )
             sections = _dict_field(_dict_field(detail, "jobAd"), "sections")
             description = "\n".join(
                 _clean_html(_as_text(value.get("text")))
@@ -541,7 +546,7 @@ class CareerCrawler:
             postings = _list_field(payload, "jobPostings")
             if not postings:
                 break
-            new_on_page = 0
+            fresh: list[tuple[dict[str, Any], str]] = []
             for item in postings:
                 if not isinstance(item, dict):
                     continue
@@ -549,10 +554,15 @@ class CareerCrawler:
                 if not external_path or external_path in seen_paths:
                     continue
                 seen_paths.add(external_path)
-                new_on_page += 1
-                detail = await self._json_request(
-                    "GET", f"{base}{external_path}", honor_robots=False
-                )
+                fresh.append((item, external_path))
+            new_on_page = len(fresh)
+            # Workday needs a detail request per posting; in series this was the single
+            # slowest part of a crawl (measured ~0.66s per posting), so fetch the page's
+            # postings concurrently under the shared request semaphore.
+            details = await self._gather_json([f"{base}{path}" for _, path in fresh])
+            for (item, external_path), detail in zip(fresh, details, strict=True):
+                if detail is None:
+                    continue
                 info = _dict_field(detail, "jobPostingInfo")
                 description = _clean_html(_as_text(info.get("jobDescription")))
                 apply_url = urljoin(company.url, external_path)
@@ -698,6 +708,24 @@ class CareerCrawler:
         text = response.text
         self._cache[key] = text
         return text
+
+    async def _gather_json(self, urls: list[str]) -> list[Any]:
+        """Fetch detail URLs concurrently, returning None where one failed.
+
+        Adapters that need a request per posting are otherwise dominated by round-trip
+        latency. Concurrency is still bounded by the shared request semaphore, and a
+        single failed posting yields None instead of aborting the whole company.
+        """
+        if not urls:
+            return []
+
+        async def one(url: str) -> Any:
+            try:
+                return await self._json_request("GET", url, honor_robots=False)
+            except CrawlError:
+                return None
+
+        return list(await asyncio.gather(*(one(url) for url in urls)))
 
     async def _json_request(
         self,

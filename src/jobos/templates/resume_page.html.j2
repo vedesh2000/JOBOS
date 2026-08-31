@@ -39,7 +39,9 @@
     </div>
     <div class="spacer"></div>
     <div class="actions">
-      <a class="btn small" href="/resume/{{ master.id }}.json">View JSON</a>
+      <a class="btn small primary" href="/resume/{{ master.id }}.pdf" target="_blank" rel="noopener">View PDF</a>
+      <a class="btn small" href="/resume/{{ master.id }}.html" target="_blank" rel="noopener">View HTML</a>
+      <a class="btn small" href="/resume/{{ master.id }}.json" target="_blank" rel="noopener">JSON</a>
     </div>
   </div>
 
@@ -97,7 +99,7 @@
   <h2>Versions</h2>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>ID</th><th>Source</th><th>Kind</th><th>Created</th><th>Hash</th></tr></thead>
+      <thead><tr><th>ID</th><th>Source</th><th>Kind</th><th>Created</th><th>Hash</th><th class="nowrap">View</th></tr></thead>
       <tbody>
         {% for version in versions %}
         <tr>
@@ -106,6 +108,12 @@
           <td><span class="badge">{{ 'master' if version.is_master else version.source_format }}</span></td>
           <td class="nowrap">{{ version.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
           <td><code>{{ version.content_hash[:12] }}</code></td>
+          <td class="nowrap">
+            <div class="actions">
+              <a class="btn small" href="/resume/{{ version.id }}.html" target="_blank" rel="noopener">View</a>
+              <a class="btn small" href="/resume/{{ version.id }}.pdf" target="_blank" rel="noopener">PDF</a>
+            </div>
+          </td>
         </tr>
         {% endfor %}
       </tbody>

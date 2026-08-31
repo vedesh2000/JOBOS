@@ -279,6 +279,18 @@ companies:
 India-based roles. To find a company's real board, look at where its careers page
 submits applications; most product companies use Greenhouse, Lever, or Ashby.
 
+### Adding a company
+
+From the dashboard, use **Add a company permanently** under the crawl bar, or:
+
+```bash
+jobos add-company https://boards.greenhouse.io/acme --crawl
+```
+
+Both write the entry under `companies:` in `config.yaml` and load it immediately, so no
+restart is needed. The file is edited as text rather than rewritten from parsed YAML, so
+your comments survive; added entries collect under one marker at the end of the block.
+
 ### Crawling a one-off URL
 
 You do not have to add a company to config to try it. Paste any careers-page or
@@ -447,10 +459,14 @@ drafting assistant with a human in the loop, not an autopilot.
   marked closed and drop out of searches (shown as `closed` in the crawl summary); a
   board truncated by `per_company_limit` never closes anything, since its tail was
   never fetched.
-- **Workday and SmartRecruiters are slow.** They have no location facet and fetch one
-  detail page per posting, so a large tenant (Adobe, Salesforce, Target) is walked
-  from the top up to `per_company_limit` and can take minutes. Their India roles are
-  not listed first, so raising the limit trades crawl time for more coverage.
+- **Workday and SmartRecruiters are the slow adapters.** They have no location facet
+  and need one request per posting (Greenhouse, Lever and Ashby return a whole board in
+  one response). Those per-posting requests are issued concurrently, bounded by
+  `crawler.concurrency`, but paging is still serial, so a large tenant (Adobe,
+  Salesforce, Target) walked up to `per_company_limit` still takes minutes. Their India
+  roles are not listed first, so raising the limit trades crawl time for coverage.
+  Rough guide per board: Greenhouse/Ashby a second or two, Workday around 0.3s per
+  posting. A full crawl of ~100 boards is ~20 minutes, dominated by these two.
 - **The PDF/DOCX parser is best-effort.** Dense two-column resumes with unusual bullet
   characters can parse poorly. Use YAML for reliable results.
 - **AI structuring of a whole resume is unreliable** with small or reasoning-heavy

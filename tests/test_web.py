@@ -102,3 +102,101 @@ def test_crawl_bad_url_is_400_json(service: JobOSService) -> None:
     )
     assert response.status_code == 400
     assert "web address" in response.json()["detail"].lower()
+
+
+CONFIG_WITH_COMMENTS = """\
+data_dir: .jobos
+output_dir: output
+
+preferences:
+  remote_only: false
+
+# Boards below were verified by hand.
+companies:
+  # --- global product companies ---
+  okta: https://boards.greenhouse.io/okta          # 113 India roles
+  meesho: https://jobs.lever.co/meesho             # 46 India roles
+
+# Trailing note that must stay at the bottom.
+"""
+
+
+def test_append_company_preserves_comments_and_inserts_in_block(tmp_path) -> None:
+    import yaml
+
+    from jobos.config import append_company
+
+    path = tmp_path / "config.yaml"
+    path.write_text(CONFIG_WITH_COMMENTS, encoding="utf-8")
+    append_company(path, "acme", "Acme", "https://boards.greenhouse.io/acme")
+    text = path.read_text(encoding="utf-8")
+
+    # Every comment survives, which is the whole reason for editing text not YAML.
+    assert "# Boards below were verified by hand." in text
+    assert "# 113 India roles" in text
+    assert "# --- global product companies ---" in text
+    assert "# Trailing note that must stay at the bottom." in text
+
+    lines = text.splitlines()
+    added = next(i for i, line in enumerate(lines) if line.startswith("  acme:"))
+    last_existing = next(i for i, line in enumerate(lines) if line.startswith("  meesho:"))
+    trailing = next(i for i, line in enumerate(lines) if line.startswith("# Trailing note"))
+    assert last_existing < added < trailing  # inside the block, above the trailing comment
+
+    # A second add reuses the same marker rather than starting another section.
+    append_company(path, "beta", "Beta", "https://jobs.lever.co/beta")
+    text = path.read_text(encoding="utf-8")
+    assert text.count("# --- added from the dashboard") == 1
+
+    parsed = yaml.safe_load(text)
+    assert parsed["companies"]["acme"] == "https://boards.greenhouse.io/acme"
+    assert parsed["companies"]["beta"] == "https://jobs.lever.co/beta"
+    assert set(parsed["companies"]) == {"okta", "meesho", "acme", "beta"}
+
+
+def test_append_company_rejects_duplicate_slug(tmp_path) -> None:
+    import pytest as _pytest
+
+    from jobos.config import append_company
+
+    path = tmp_path / "config.yaml"
+    path.write_text(CONFIG_WITH_COMMENTS, encoding="utf-8")
+    with _pytest.raises(ValueError, match="already in the config"):
+        append_company(path, "okta", "Okta", "https://boards.greenhouse.io/okta")
+
+
+def test_add_company_writes_config_and_loads_it(service: JobOSService) -> None:
+    """The company is usable immediately, without restarting the process."""
+    service.config.config_path.write_text(CONFIG_WITH_COMMENTS, encoding="utf-8")
+    slug = service.add_company("https://jobs.ashbyhq.com/prefect")
+    assert slug == "prefect"
+    assert service.config.companies["prefect"].name == "Prefect"
+    assert "prefect:" in service.config.config_path.read_text(encoding="utf-8")
+
+
+def test_artifact_is_inline_by_default_and_attachment_on_request(
+    service: JobOSService, tmp_path
+) -> None:
+    """A PDF must preview in the browser; ?download=1 forces the save dialog."""
+    from unittest.mock import patch
+
+    pdf = tmp_path / "resume.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+    client = TestClient(create_app(service=service))
+
+    with patch.object(JobOSService, "artifact_path", return_value=pdf):
+        inline = client.get("/applications/1/files/resume.pdf")
+        attached = client.get("/applications/1/files/resume.pdf?download=1")
+
+    assert inline.headers["content-type"] == "application/pdf"
+    assert inline.headers["content-disposition"].startswith("inline")
+    assert attached.headers["content-disposition"].startswith("attachment")
+
+
+def test_readme_tab_renders_markdown(service: JobOSService) -> None:
+    client = TestClient(create_app(service=service))
+    response = client.get("/readme")
+    assert response.status_code == 200
+    # The real README has an H1 and fenced code, so both should be converted.
+    assert "<h1>" in response.text
+    assert "markdown-body" in response.text

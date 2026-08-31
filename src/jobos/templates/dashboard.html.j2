@@ -27,6 +27,27 @@
   sites are read where the page exposes its postings.
 </p>
 
+<details class="card add-company">
+  <summary>Add a company permanently</summary>
+  <p class="subtle">
+    Saves it under <code>companies:</code> in <code>{{ config_path }}</code>, so every
+    future crawl includes it. A one-off URL crawl above is not saved.
+  </p>
+  <form method="post" action="/companies" class="actions" data-busy="Adding...">
+    <label class="field">Careers URL
+      <input type="url" name="url" required class="url-input"
+             placeholder="https://boards.greenhouse.io/acme">
+    </label>
+    <label class="field">Name <span class="subtle">(optional)</span>
+      <input type="text" name="name" placeholder="Derived from the URL">
+    </label>
+    <label class="field check">
+      <input type="checkbox" name="crawl" value="1" checked> Crawl it now
+    </label>
+    <button type="submit" class="btn primary">Add company</button>
+  </form>
+</details>
+
 {% if not configured %}
 <div class="flash warn">
   No companies configured yet. Add them under <code>companies:</code> in

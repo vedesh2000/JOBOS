@@ -10,6 +10,7 @@ from fastapi import FastAPI, Form, Query, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from markdown_it import MarkdownIt
 
 from jobos.config import AppConfig, load_config
 from jobos.models import (
@@ -230,6 +231,39 @@ def create_app(config: AppConfig | None = None, service: JobOSService | None = N
             headers={"Content-Disposition": f'inline; filename="resume-v{version_id}.json"'},
         )
 
+    @app.get("/resume/{version_id}.html", include_in_schema=False)
+    async def resume_preview(request: Request, version_id: int) -> Response:
+        """Render a stored version with the configured theme, for viewing in the browser.
+
+        HTML rather than PDF so it is instant: the PDF path has to start Chromium.
+        """
+        service = get_service(request)
+        version = service.database.get_resume(version_id)
+        if version is None:
+            return JSONResponse({"detail": "resume version not found"}, status_code=404)
+        try:
+            return HTMLResponse(service.renderer.render_html(version.resume))
+        except RenderError as exc:
+            return JSONResponse({"detail": str(exc)}, status_code=500)
+
+    @app.get("/resume/{version_id}.pdf", include_in_schema=False)
+    async def resume_pdf(request: Request, version_id: int) -> Response:
+        """Render a stored version to PDF on demand. Slower: this starts Chromium."""
+        service = get_service(request)
+        version = service.database.get_resume(version_id)
+        if version is None:
+            return JSONResponse({"detail": "resume version not found"}, status_code=404)
+        try:
+            html = service.renderer.render_html(version.resume)
+            pdf = await service.renderer.render_pdf(html)
+        except RenderError as exc:
+            return JSONResponse({"detail": str(exc)}, status_code=500)
+        return Response(
+            pdf,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'inline; filename="resume-v{version_id}.pdf"'},
+        )
+
     @app.post("/crawl", include_in_schema=False)
     async def start_crawl(
         request: Request,
@@ -256,6 +290,28 @@ def create_app(config: AppConfig | None = None, service: JobOSService | None = N
         if wants_json:
             return JSONResponse(_crawl_status(service), status_code=202)
         return back("/", notice="Crawl started. Reload in a moment to see new jobs.")
+
+    @app.post("/companies", include_in_schema=False)
+    async def add_company(
+        request: Request,
+        url: Annotated[str, Form()],
+        name: Annotated[str, Form()] = "",
+        crawl: Annotated[str, Form()] = "",
+    ) -> Response:
+        """Save a company to config.yaml, optionally crawling it right away."""
+        service = get_service(request)
+        try:
+            slug = service.add_company(url, name or None)
+        except ServiceError as exc:
+            return back("/", error=str(exc))
+        added = service.config.companies[slug].name
+        if crawl == "1":
+            try:
+                await service.start_background_crawl(slug)
+            except ServiceError as exc:
+                return back("/", error=f"Added {added}, but the crawl did not start: {exc}")
+            return back("/", notice=f"Added {added} to your config and started a crawl.")
+        return back("/", notice=f"Added {added} to your config as '{slug}'.")
 
     @app.get("/jobs/{job_id}", response_class=HTMLResponse, include_in_schema=False)
     async def job_detail(request: Request, job_id: int) -> HTMLResponse:
@@ -363,7 +419,9 @@ def create_app(config: AppConfig | None = None, service: JobOSService | None = N
         )
 
     @app.get("/applications/{application_id}/files/{name}", include_in_schema=False)
-    async def artifact(request: Request, application_id: int, name: str) -> Response:
+    async def artifact(
+        request: Request, application_id: int, name: str, download: bool = False
+    ) -> Response:
         service = get_service(request)
         if name not in ARTIFACT_MEDIA_TYPES:
             return JSONResponse({"detail": "unknown artifact"}, status_code=404)
@@ -371,7 +429,16 @@ def create_app(config: AppConfig | None = None, service: JobOSService | None = N
             path = service.artifact_path(application_id, name)
         except ServiceError as exc:
             return JSONResponse({"detail": str(exc)}, status_code=404)
-        return FileResponse(path, media_type=ARTIFACT_MEDIA_TYPES[name], filename=name)
+        # Passing `filename` makes Starlette send Content-Disposition: attachment, which
+        # forces a download and stops the browser previewing the PDF. Default to inline
+        # so it opens in the viewer, and only attach when ?download=1 is asked for.
+        if download:
+            return FileResponse(path, media_type=ARTIFACT_MEDIA_TYPES[name], filename=name)
+        return FileResponse(
+            path,
+            media_type=ARTIFACT_MEDIA_TYPES[name],
+            headers={"Content-Disposition": f'inline; filename="{name}"'},
+        )
 
     @app.get("/history", response_class=HTMLResponse, include_in_schema=False)
     async def history(request: Request) -> HTMLResponse:
@@ -389,6 +456,28 @@ def create_app(config: AppConfig | None = None, service: JobOSService | None = N
                 "rows": rows,
                 "generated": sum(1 for item in applications if item.output_dir),
                 "resume_versions": service.resume_versions(),
+            },
+        )
+
+    @app.get("/readme", response_class=HTMLResponse, include_in_schema=False)
+    async def readme(request: Request) -> HTMLResponse:
+        """Render the project README so the docs are reachable without leaving the app."""
+        document = _find_readme()
+        if document is None:
+            return render(
+                request,
+                "readme.html.j2",
+                {"active": "readme", "body": "", "missing": True},
+            )
+        # html=False keeps raw HTML in the source escaped rather than injected.
+        parser = MarkdownIt("commonmark", {"html": False, "linkify": True}).enable("table")
+        return render(
+            request,
+            "readme.html.j2",
+            {
+                "active": "readme",
+                "body": parser.render(document.read_text(encoding="utf-8")),
+                "missing": False,
             },
         )
 
@@ -547,6 +636,17 @@ def _empty_dashboard(service: JobOSService, error: str) -> dict[str, Any]:
         },
         "error": error,
     }
+
+
+def _find_readme() -> Path | None:
+    """Locate README.md, whether running from a checkout or an installed package."""
+    for candidate in (
+        Path(__file__).resolve().parents[2] / "README.md",  # src/jobos -> repo root
+        Path.cwd() / "README.md",
+    ):
+        if candidate.is_file():
+            return candidate
+    return None
 
 
 def _crawl_status(service: JobOSService) -> dict[str, Any]:

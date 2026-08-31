@@ -1,0 +1,22 @@
+{% extends "base.html.j2" %}
+{% block title %}Docs — JobOS{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Docs</h1>
+    <p class="subtle">The project README, rendered here so it is reachable while you work.</p>
+  </div>
+</div>
+
+{% if missing %}
+<div class="card">
+  <p class="empty">
+    No <code>README.md</code> found next to the package or in the working directory.
+  </p>
+</div>
+{% else %}
+<div class="card markdown-body">
+  {{ body | safe }}
+</div>
+{% endif %}
+{% endblock %}
