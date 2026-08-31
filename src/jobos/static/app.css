@@ -96,6 +96,8 @@ main { max-width: 1180px; margin: 0 auto; padding: 22px 20px 60px; }
 /* forms */
 form.filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
 label.field { display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem; color: var(--muted); }
+label.field.check { flex-direction: row; align-items: center; gap: 6px; white-space: nowrap; }
+label.field.check input { width: auto; }
 input[type="text"], input[type="search"], input[type="number"], input[type="file"], select, textarea {
   background: var(--surface);
   color: var(--text);

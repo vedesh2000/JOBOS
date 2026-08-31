@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Annotated, Any
 from urllib.parse import urlsplit
 
-from fastapi import FastAPI, Form, Request, UploadFile
+from fastapi import FastAPI, Form, Query, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -123,6 +123,10 @@ def create_app(config: AppConfig | None = None, service: JobOSService | None = N
         location: str = "",
         status: str = "",
         min_score: str = "",
+        max_years: str = "",
+        skills: str = "",
+        exclude_skills: str = "",
+        preferred: str = "",
         sort: str = "newest",
     ) -> Response:
         service = get_service(request)
@@ -130,13 +134,22 @@ def create_app(config: AppConfig | None = None, service: JobOSService | None = N
             return back("/resume", notice="Upload your master resume to get started.")
         job_status = JobStatus(status) if status in set(JobStatus) else None
         minimum = int(min_score) if min_score.strip().isdigit() else None
+        # A bare visit to "/" shows the curated set (your config preferences); once the
+        # filter form is used, the checkbox decides. An unchecked box submits nothing,
+        # so a submitted form without it means the user turned preferences off.
+        submitted = bool(request.query_params)
+        apply_preferences = (preferred == "on") if submitted else True
         jobs = service.search_jobs(
             search=q.strip(),
             company=company.strip(),
             location=location.strip(),
             status=job_status,
             minimum_score=minimum,
+            max_years=_as_float(max_years),
+            skills_include=_csv_terms(skills),
+            skills_exclude=_csv_terms(exclude_skills),
             sort=sort if sort in dict(SORT_OPTIONS) else "newest",
+            apply_preferences=apply_preferences,
         )
         return render(
             request,
@@ -153,12 +166,17 @@ def create_app(config: AppConfig | None = None, service: JobOSService | None = N
                 "min_score": service.config.preferences.minimum_match_score,
                 "statuses": [item.value for item in JobStatus],
                 "sorts": SORT_OPTIONS,
+                "preferred": apply_preferences,
                 "query": {
                     "q": q,
                     "company": company,
                     "location": location,
                     "status": status,
                     "min_score": min_score,
+                    "max_years": max_years,
+                    "skills": skills,
+                    "exclude_skills": exclude_skills,
+                    "preferred": apply_preferences,
                     "sort": sort,
                 },
             },
@@ -379,6 +397,10 @@ def create_app(config: AppConfig | None = None, service: JobOSService | None = N
         location: str = "",
         status: JobStatus | None = None,
         min_score: int | None = None,
+        max_years: float | None = None,
+        skill: Annotated[list[str] | None, Query()] = None,
+        exclude_skill: Annotated[list[str] | None, Query()] = None,
+        preferred: bool = False,
         sort: str = "newest",
         limit: int = 200,
         offset: int = 0,
@@ -389,9 +411,13 @@ def create_app(config: AppConfig | None = None, service: JobOSService | None = N
             location=location,
             status=status,
             minimum_score=min_score,
+            max_years=max_years,
+            skills_include=skill,
+            skills_exclude=exclude_skill,
             sort=sort,
             limit=limit,
             offset=offset,
+            apply_preferences=preferred,
         )
 
     @app.get("/api/jobs/{job_id}", tags=["jobs"])
@@ -483,12 +509,17 @@ def _empty_dashboard(service: JobOSService, error: str) -> dict[str, Any]:
         "min_score": service.config.preferences.minimum_match_score,
         "statuses": [item.value for item in JobStatus],
         "sorts": SORT_OPTIONS,
+        "preferred": True,
         "query": {
             "q": "",
             "company": "",
             "location": "",
             "status": "",
             "min_score": "",
+            "max_years": "",
+            "skills": "",
+            "exclude_skills": "",
+            "preferred": True,
             "sort": "newest",
         },
         "error": error,
@@ -499,3 +530,21 @@ def _quote(value: str) -> str:
     from urllib.parse import quote
 
     return quote(value[:300], safe="")
+
+
+def _csv_terms(value: str) -> list[str] | None:
+    """Split a comma-separated filter field into terms; None when nothing was typed.
+
+    None (not an empty list) so the service falls back to config preferences instead
+    of treating the field as "match no skills".
+    """
+    terms = [term.strip() for term in value.split(",") if term.strip()]
+    return terms or None
+
+
+def _as_float(value: str) -> float | None:
+    """Parse a numeric filter field, tolerating blanks and junk from the form."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None

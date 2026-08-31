@@ -69,6 +69,12 @@
     <label class="field">Location
       <input type="text" name="location" value="{{ query.location }}" placeholder="Hyderabad">
     </label>
+    <label class="field">Skills
+      <input type="text" name="skills" value="{{ query.skills }}" placeholder="python, react">
+    </label>
+    <label class="field">Exclude skills
+      <input type="text" name="exclude_skills" value="{{ query.exclude_skills }}" placeholder="java, spring boot">
+    </label>
     <label class="field">Status
       <select name="status">
         <option value="">Any</option>
@@ -80,6 +86,9 @@
     <label class="field">Min score
       <input type="number" name="min_score" min="0" max="100" value="{{ query.min_score }}">
     </label>
+    <label class="field">Max years
+      <input type="number" name="max_years" min="0" max="60" value="{{ query.max_years }}">
+    </label>
     <label class="field">Sort
       <select name="sort">
         {% for value, label in sorts %}
@@ -87,8 +96,12 @@
         {% endfor %}
       </select>
     </label>
+    <label class="field check" title="Apply the preferences from your config.yaml: roles, skills, locations, years, and minimum score.">
+      <input type="checkbox" name="preferred" value="on" {{ 'checked' if query.preferred }}>
+      Preferred only
+    </label>
     <button type="submit" class="btn primary">Apply</button>
-    <a class="btn" href="/">Reset</a>
+    <a class="btn" href="/?preferred=on">Reset</a>
   </form>
 </div>
 
