@@ -192,17 +192,32 @@ preferences:
   remote_only: false
   minimum_match_score: 45
   roles_include: [engineer, developer, sde, software, backend, "full stack"]
-  roles_exclude: [manager, principal, director, intern, vp, head]
+  roles_exclude: [manager, director, intern, vp, head]
+  skills_include: [python, react, "full stack", node.js, typescript]
+  skills_exclude: [spring boot, kotlin, scala]
   min_years:
   max_years: 8
   seniority: ""
   max_applications_per_company: 3
 ```
 
-`search --preferred`, `report`, and `daily` apply these together:
+`search --preferred`, `report`, `daily`, and `analyse-all --preferred` apply these
+together:
 
+- **`preferred_locations`** keeps a job whose location contains any one of the
+  entries. Listing both spellings ("Bengaluru" and "Bangalore") means a single search
+  covers both. An explicit `--location` on the command overrides this list.
 - **`roles_include` / `roles_exclude`** filter on the job title, so you only see
-  individual-contributor engineering roles and not management.
+  individual-contributor engineering roles and not management. Note that `principal`
+  is usually a senior IC grade at product companies, so excluding it drops real
+  matches; leave it out of `roles_exclude`.
+- **`skills_include` / `skills_exclude`** filter on the posting's tech stack — its
+  skills, title, and description. Matching is on whole tokens, so excluding `java`
+  keeps a JavaScript role, and known aliases fold together (`reactjs` counts as
+  `react`, `k8s` as `kubernetes`). Terms outside the known vocabulary match literally,
+  so `full stack` works. Include is any-of; exclude wins over include. Excluding
+  `spring boot` is a sharper way to drop JVM-first roles than excluding `java`, which
+  also discards polyglot "Java or Python" postings you might want.
 - **`min_years` / `max_years`** bound the experience a posting asks for. This needs
   analysis data, so it only constrains *analysed* jobs; unanalysed roles are kept so a
   pre-analysis shortlist is never empty. The explicit `--max-years` flag is strict and
@@ -299,8 +314,16 @@ submits applications; most product companies use Greenhouse, Lever, or Ashby.
 | `jobos score <job_id>` | show a stored ATS report |
 
 `search` accepts `--company`, `--location`, `--status`, `--min-score`, `--max-years`,
-`--min-years`, `--seniority`, `--sort` (`newest`, `oldest`, `score`, `company`,
-`title`), `--limit`, `--preferred`, and `--json`.
+`--min-years`, `--seniority`, `--skill` (repeatable, any-of), `--exclude-skill`
+(repeatable), `--sort` (`newest`, `oldest`, `score`, `company`, `title`), `--limit`,
+`--preferred`, and `--json`. `analyse-all` accepts the same selection filters plus
+`--preferred`, so you can score only the roles that pass your preferences instead of
+spending model time on ones you have ruled out:
+
+```bash
+jobos search --location Hyderabad --skill python --skill react --exclude-skill "spring boot"
+jobos analyse-all --preferred --location Bengaluru
+```
 
 ### Applications
 
@@ -398,11 +421,19 @@ drafting assistant with a human in the loop, not an autopilot.
 
 ## Known limitations
 
-- **Very large boards can exceed the crawler's 8 MB response cap** and are skipped
-  with an error (seen with Databricks and OpenAI, whose full-content feeds are huge).
-  The rest of the crawl continues normally.
+- **Very large boards** stream every job description in one response; the crawler caps
+  a single response at 32 MB to bound memory. The largest boards seen (Databricks,
+  OpenAI, Airwallex) sit at 9-12 MB and load fine, but a company that grows past 32 MB
+  would be skipped with an error while the rest of the crawl continues.
 - **Board slugs change.** A company can 404 one week and work the next. `crawl`
-  reports per-company errors and keeps going.
+  reports per-company errors and keeps going. Postings a board no longer lists are
+  marked closed and drop out of searches (shown as `closed` in the crawl summary); a
+  board truncated by `per_company_limit` never closes anything, since its tail was
+  never fetched.
+- **Workday and SmartRecruiters are slow.** They have no location facet and fetch one
+  detail page per posting, so a large tenant (Adobe, Salesforce, Target) is walked
+  from the top up to `per_company_limit` and can take minutes. Their India roles are
+  not listed first, so raising the limit trades crawl time for more coverage.
 - **The PDF/DOCX parser is best-effort.** Dense two-column resumes with unusual bullet
   characters can parse poorly. Use YAML for reliable results.
 - **AI structuring of a whole resume is unreliable** with small or reasoning-heavy
