@@ -233,10 +233,17 @@ def create_app(config: AppConfig | None = None, service: JobOSService | None = N
     @app.post("/crawl", include_in_schema=False)
     async def start_crawl(request: Request, company: Annotated[str, Form()] = "") -> Response:
         service = get_service(request)
+        # The dashboard JS posts with Accept: application/json so it can stay on the
+        # page and poll for progress. A plain form post (no JS) still redirects back.
+        wants_json = "application/json" in request.headers.get("accept", "")
         try:
             await service.start_background_crawl(company.strip() or None)
         except ServiceError as exc:
+            if wants_json:
+                return JSONResponse({"detail": str(exc)}, status_code=409)
             return back("/", error=str(exc))
+        if wants_json:
+            return JSONResponse(_crawl_status(service), status_code=202)
         return back("/", notice="Crawl started. Reload in a moment to see new jobs.")
 
     @app.get("/jobs/{job_id}", response_class=HTMLResponse, include_in_schema=False)
@@ -389,6 +396,11 @@ def create_app(config: AppConfig | None = None, service: JobOSService | None = N
     async def api_health(request: Request) -> HealthReport:
         return await get_service(request).health()
 
+    @app.get("/api/crawl", tags=["system"])
+    async def api_crawl_status(request: Request) -> dict[str, Any]:
+        """Current background-crawl status, polled by the dashboard spinner."""
+        return _crawl_status(get_service(request))
+
     @app.get("/api/jobs", tags=["jobs"])
     async def api_jobs(
         request: Request,
@@ -523,6 +535,19 @@ def _empty_dashboard(service: JobOSService, error: str) -> dict[str, Any]:
             "sort": "newest",
         },
         "error": error,
+    }
+
+
+def _crawl_status(service: JobOSService) -> dict[str, Any]:
+    """Serialise the background-crawl progress for the status endpoint and the poller."""
+    progress = service.crawl_progress
+    return {
+        "running": progress.running,
+        "label": progress.label,
+        "started_at": progress.started_at,
+        "finished_at": progress.finished_at,
+        "error": progress.error,
+        "summary": progress.summary.model_dump(mode="json") if progress.summary else None,
     }
 
 

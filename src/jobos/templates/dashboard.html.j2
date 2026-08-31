@@ -7,7 +7,7 @@
     <p class="subtle">{{ total }} matching {{ 'job' if total == 1 else 'jobs' }} stored locally.</p>
   </div>
   <div class="spacer"></div>
-  <form method="post" action="/crawl" class="actions" data-busy="Starting...">
+  <form method="post" action="/crawl" class="actions" id="crawl-form">
     <select name="company" aria-label="Company to crawl">
       <option value="">All configured companies</option>
       {% for slug, company in configured.items() %}
@@ -27,16 +27,18 @@
 </div>
 {% endif %}
 
+<div id="crawl-live" data-status-url="/api/crawl" data-running="{{ 'true' if crawl.running else 'false' }}">
 {% if crawl.running %}
 <div class="flash info">
-  Crawling {{ crawl.label }} since {{ crawl.started_at }}. Reload to see new jobs.
+  <span class="spinner" aria-hidden="true"></span>
+  Crawling {{ crawl.label }}… this can take a minute. <span class="subtle">Reload to see new jobs.</span>
 </div>
 {% elif crawl.error %}
 <div class="flash error">Last crawl failed: {{ crawl.error }}</div>
 {% elif crawl.summary %}
 <div class="flash info">
   Last crawl finished {{ crawl.finished_at }}: {{ crawl.summary.jobs_added }} added,
-  {{ crawl.summary.jobs_updated }} updated across
+  {{ crawl.summary.jobs_updated }} updated, {{ crawl.summary.jobs_closed }} closed across
   {{ crawl.summary.companies_succeeded }}/{{ crawl.summary.companies_requested }} companies.
   {% if crawl.summary.errors %}
   <ul>
@@ -45,6 +47,7 @@
   {% endif %}
 </div>
 {% endif %}
+</div>
 
 <div class="stats">
   <div class="stat"><b>{{ total }}</b><span>Shown</span></div>

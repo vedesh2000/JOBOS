@@ -71,6 +71,19 @@ nav.topnav a.active, nav.topnav a:hover { color: var(--text); }
 main { max-width: 1180px; margin: 0 auto; padding: 22px 20px 60px; }
 .page-head { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 6px; }
 .subtle { color: var(--muted); font-size: 0.9rem; }
+.spinner {
+  display: inline-block;
+  width: 0.85em;
+  height: 0.85em;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: jobos-spin 0.7s linear infinite;
+  vertical-align: -0.12em;
+  margin-right: 0.35em;
+}
+@keyframes jobos-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
 
 /* surfaces */
 .card {

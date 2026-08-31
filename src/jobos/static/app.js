@@ -21,6 +21,125 @@
     }
   }
 
+  function escapeHtml(value) {
+    var div = document.createElement("div");
+    div.textContent = value == null ? "" : String(value);
+    return div.innerHTML;
+  }
+
+  // Watch a running crawl and refresh the page when it finishes, instead of asking
+  // the user to reload. Progressive enhancement: without JS the form still posts and
+  // redirects, and the server-rendered status message still shows.
+  function initCrawlWatcher() {
+    var region = document.getElementById("crawl-live");
+    if (!region) {
+      return;
+    }
+    var statusUrl = region.getAttribute("data-status-url") || "/api/crawl";
+    var form = document.getElementById("crawl-form");
+    var button = form ? form.querySelector('button[type="submit"]') : null;
+    var polling = false;
+
+    function flash(kind, html) {
+      region.innerHTML = '<div class="flash ' + kind + '">' + html + "</div>";
+    }
+
+    function spinner(text) {
+      return '<span class="spinner" aria-hidden="true"></span> ' + text;
+    }
+
+    function poll() {
+      fetch(statusUrl, { headers: { Accept: "application/json" } })
+        .then(function (response) {
+          return response.json();
+        })
+        .then(function (status) {
+          if (status.running) {
+            flash("info", spinner("Crawling " + escapeHtml(status.label) + "… this can take a minute."));
+            window.setTimeout(poll, 2000);
+            return;
+          }
+          polling = false;
+          if (status.error) {
+            flash("error", "Crawl failed: " + escapeHtml(status.error));
+            if (button) {
+              button.disabled = false;
+            }
+            return;
+          }
+          var summary = status.summary;
+          if (summary) {
+            flash(
+              "info",
+              spinner(
+                "Done — " +
+                  summary.jobs_added +
+                  " added, " +
+                  summary.jobs_updated +
+                  " updated. Refreshing…"
+              )
+            );
+          }
+          window.setTimeout(function () {
+            window.location.reload();
+          }, 800);
+        })
+        .catch(function () {
+          // Transient hiccup while the server is busy; back off and retry.
+          window.setTimeout(poll, 4000);
+        });
+    }
+
+    function watch() {
+      if (polling) {
+        return;
+      }
+      polling = true;
+      poll();
+    }
+
+    // The page was opened while a crawl was already in flight.
+    if (region.getAttribute("data-running") === "true") {
+      watch();
+    }
+
+    if (form) {
+      form.addEventListener("submit", function (event) {
+        event.preventDefault();
+        if (button) {
+          button.textContent = "Starting…";
+          button.disabled = true;
+        }
+        flash("info", spinner("Starting crawl…"));
+        fetch("/crawl", {
+          method: "POST",
+          headers: { Accept: "application/json" },
+          body: new FormData(form),
+        })
+          .then(function (response) {
+            if (response.status === 409) {
+              return response.json().then(function (data) {
+                throw new Error(data.detail || "A crawl is already running.");
+              });
+            }
+            if (!response.ok) {
+              throw new Error("Could not start the crawl.");
+            }
+            return response.json();
+          })
+          .then(function () {
+            watch();
+          })
+          .catch(function (error) {
+            if (button) {
+              button.disabled = false;
+            }
+            flash("error", escapeHtml(error.message || "Could not start the crawl."));
+          });
+      });
+    }
+  }
+
   var initial = stored();
   if (!initial) {
     initial = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
@@ -56,5 +175,7 @@
         }
       });
     });
+
+    initCrawlWatcher();
   });
 })();
