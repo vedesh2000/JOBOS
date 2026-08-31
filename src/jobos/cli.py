@@ -322,6 +322,51 @@ def crawl(
 
 
 @app.command()
+def prune(
+    days: Annotated[
+        int, typer.Option(help="Remove postings closed and unseen for at least this many days.")
+    ] = 30,
+    vacuum: Annotated[
+        bool, typer.Option("--vacuum", help="Compact the database file after deleting (VACUUM).")
+    ] = False,
+    yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes", help="Actually delete. Without it, prune only reports what it would remove."
+        ),
+    ] = False,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Delete old closed postings so the local database stays bounded.
+
+    Only jobs a board has stopped listing (already hidden from search) and unseen for
+    at least --days are eligible, and a job with a prepared application is never
+    removed. This is a dry run unless you pass --yes; active jobs are never touched.
+    """
+    service = _service()
+    if not yes:
+        count = service.prune_jobs(older_than_days=days, commit=False)
+        if json_output:
+            _emit({"committed": False, "days": days, "would_prune": count})
+            return
+        if count == 0:
+            console.print(f"[green]Nothing to prune[/green] — no closed jobs older than {days} days.")
+        else:
+            console.print(
+                f"Would delete [bold]{count}[/bold] closed job(s) older than {days} days. "
+                "Re-run with [bold]--yes[/bold] (add [bold]--vacuum[/bold] to reclaim disk)."
+            )
+        return
+    removed = service.prune_jobs(older_than_days=days, commit=True, vacuum=vacuum)
+    if json_output:
+        _emit({"committed": True, "days": days, "pruned": removed, "vacuumed": vacuum})
+        return
+    console.print(f"[green]Pruned {removed}[/green] closed job(s) older than {days} days.")
+    if vacuum:
+        console.print("Compacted the database file with VACUUM.")
+
+
+@app.command()
 def search(
     query: Annotated[str, typer.Argument(help="Free text, e.g. python remote aws.")] = "",
     company: Annotated[str, typer.Option(help="Exact company name.")] = "",

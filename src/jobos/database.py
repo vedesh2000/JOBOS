@@ -17,6 +17,8 @@ from sqlalchemy import (
     String,
     Text,
     create_engine,
+    delete,
+    func,
     or_,
 )
 from sqlalchemy import event as sqlalchemy_event
@@ -340,6 +342,51 @@ class Database:
                 closed += 1
             session.flush()
         return closed
+
+    def count_prunable_jobs(self, older_than: datetime) -> int:
+        """How many closed jobs `prune_closed_jobs` would remove, for a dry run."""
+        with self.session() as session:
+            return int(session.scalar(self._prunable_query(func.count(), older_than)) or 0)
+
+    def prune_closed_jobs(self, older_than: datetime) -> int:
+        """Delete closed jobs last seen before the cutoff; return how many were removed.
+
+        A job is eligible only when it is already inactive (a board stopped listing it)
+        and was last seen before ``older_than``. Jobs referenced by an application are
+        always kept, so prepared packages never dangle.
+        """
+        protected = select(ApplicationRecord.job_id)
+        statement = (
+            delete(JobRecord)
+            .where(JobRecord.is_active.is_(False))
+            .where(JobRecord.last_seen_at < older_than)
+            .where(JobRecord.id.not_in(protected))
+        )
+        with self.session() as session:
+            # Count in the same transaction as the delete, so the returned figure is
+            # exactly what was removed without relying on driver rowcount typing.
+            removed = int(session.scalar(self._prunable_query(func.count(), older_than)) or 0)
+            session.execute(statement)
+        return removed
+
+    @staticmethod
+    def _prunable_query(selectable: Any, older_than: datetime) -> Select[Any]:
+        protected = select(ApplicationRecord.job_id)
+        return (
+            select(selectable)
+            .select_from(JobRecord)
+            .where(JobRecord.is_active.is_(False))
+            .where(JobRecord.last_seen_at < older_than)
+            .where(JobRecord.id.not_in(protected))
+        )
+
+    def vacuum(self) -> None:
+        """Rewrite the database file to reclaim space freed by deletes and rewrites.
+
+        VACUUM cannot run inside a transaction, so it uses an autocommit connection.
+        """
+        with self.engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+            conn.exec_driver_sql("VACUUM")
 
     def companies(self) -> list[str]:
         query = select(JobRecord.company).distinct().order_by(JobRecord.company)

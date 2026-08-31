@@ -412,6 +412,21 @@ class JobOSService:
             result.append(job)
         return result
 
+    def prune_jobs(self, *, older_than_days: int, commit: bool, vacuum: bool = False) -> int:
+        """Report or remove closed postings older than a cutoff to bound the database.
+
+        With ``commit`` false this only counts what is eligible (a dry run); with it
+        true the rows are deleted and, if ``vacuum`` is set, the file is compacted.
+        Jobs with an application are never touched. Active jobs are never touched.
+        """
+        cutoff = utc_now() - timedelta(days=max(older_than_days, 0))
+        if not commit:
+            return self.database.count_prunable_jobs(cutoff)
+        removed = self.database.prune_closed_jobs(cutoff)
+        if vacuum:
+            self.database.vacuum()
+        return removed
+
     def company_shortlists(
         self,
         *,

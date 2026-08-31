@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from jobos.models import JobAnalysis, JobData, JobStatus
+from jobos.models import JobAnalysis, JobData, JobStatus, StructuredResume
 from jobos.services import JobOSService, ServiceError
 
 
@@ -427,3 +427,94 @@ def test_explicit_location_overrides_preferred_locations(service: JobOSService) 
     }
     assert bengaluru in ids
     assert bangalore not in ids
+
+
+def _seed_closed(service: JobOSService, *, fp: str, days_old: float) -> int:
+    """Seed a job then mark it closed and last-seen `days_old` days ago."""
+    from datetime import timedelta
+
+    from jobos.database import JobRecord
+    from jobos.models import utc_now
+
+    job_data = JobData(
+        company="Acme",
+        title="Backend Engineer",
+        location="Bengaluru, India",
+        description="Python and FastAPI services.",
+        apply_url=f"https://boards.greenhouse.io/acme/jobs/{fp}",
+        source_url="https://boards.greenhouse.io/acme",
+        external_id=fp,
+    )
+    view, _ = service.database.upsert_job(job_data, fingerprint=fp)
+    with service.database.session() as session:
+        record = session.get(JobRecord, view.id)
+        assert record is not None
+        record.is_active = False
+        record.last_seen_at = utc_now() - timedelta(days=days_old)
+    return view.id
+
+
+def test_prune_dry_run_counts_without_deleting(service: JobOSService) -> None:
+    """Without --yes (commit=False) prune reports but removes nothing."""
+    _seed_closed(service, fp="old1", days_old=40)
+    _seed_closed(service, fp="old2", days_old=40)
+
+    would = service.prune_jobs(older_than_days=30, commit=False)
+    assert would == 2
+    # A second dry run still finds both, proving the first deleted nothing.
+    assert service.prune_jobs(older_than_days=30, commit=False) == 2
+
+
+def test_prune_removes_only_old_closed_jobs(service: JobOSService) -> None:
+    """Old closed jobs go; recently-closed and active jobs stay."""
+    old = _seed_closed(service, fp="old", days_old=40)
+    recent = _seed_closed(service, fp="recent", days_old=5)
+    active_data = JobData(
+        company="Acme",
+        title="Backend Engineer",
+        location="Bengaluru, India",
+        description="Python role.",
+        apply_url="https://boards.greenhouse.io/acme/jobs/active",
+        source_url="https://boards.greenhouse.io/acme",
+        external_id="active",
+    )
+    active, _ = service.database.upsert_job(active_data, fingerprint="active")
+
+    removed = service.prune_jobs(older_than_days=30, commit=True)
+    assert removed == 1
+    assert service.database.get_job(old) is None
+    assert service.database.get_job(recent) is not None
+    assert service.database.get_job(active.id) is not None
+
+
+def test_prune_keeps_jobs_with_an_application(
+    service: JobOSService, resume: StructuredResume
+) -> None:
+    """A closed, old job that has a prepared application is never pruned."""
+    from jobos.database import ApplicationRecord
+
+    version = service.database.add_resume(
+        resume,
+        source_name="test",
+        source_format="yaml",
+        original_path="test.yaml",
+        source_text="",
+        content_hash="hash-prune-test",
+    )
+    protected = _seed_closed(service, fp="hasapp", days_old=90)
+    with service.database.session() as session:
+        session.add(
+            ApplicationRecord(
+                job_id=protected,
+                master_resume_version_id=version.id,
+                plan_json={},
+                optimized_resume_json={},
+                diff_json={},
+                ats_before_json={},
+                ats_after_json={},
+            )
+        )
+
+    removed = service.prune_jobs(older_than_days=30, commit=True)
+    assert removed == 0
+    assert service.database.get_job(protected) is not None
