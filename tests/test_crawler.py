@@ -224,3 +224,54 @@ async def test_a_failed_company_does_not_close_its_roles(
     assert summary.errors  # the company failed
     assert summary.jobs_closed == 0
     assert len(database.list_jobs()) == 1
+
+
+def test_derive_company_name_from_various_urls() -> None:
+    from jobos.crawler import derive_company_name
+
+    assert derive_company_name("https://boards.greenhouse.io/acme") == "Acme"
+    assert derive_company_name("https://job-boards.greenhouse.io/big-corp") == "Big Corp"
+    assert derive_company_name("https://jobs.lever.co/rocket-labs") == "Rocket Labs"
+    assert derive_company_name("https://acme.wd1.myworkdayjobs.com/en-US/External") == "Acme"
+    assert derive_company_name("https://careers.foobar.com/openings") == "Foobar"
+    assert derive_company_name("https://www.zoho.com/careers/") == "Zoho"
+
+
+async def test_crawl_settings_stores_jobs_for_ad_hoc_url(
+    config: AppConfig, database: Database
+) -> None:
+    """An ad-hoc URL not in config is crawled through the normal adapters."""
+    from jobos.config import CompanySettings
+
+    payload = {"jobs": [_role(1, "Backend Engineer"), _role(2, "Platform Engineer")]}
+    async with httpx.AsyncClient(transport=_greenhouse_transport(payload)) as client:
+        crawler = CareerCrawler(config, database, client=client, allow_private_networks=True)
+        summary = await crawler.crawl_settings(
+            CompanySettings(name="Acme", url="https://boards.greenhouse.io/acme")
+        )
+    assert summary.companies_succeeded == 1
+    assert summary.jobs_added == 2
+    assert {job.title for job in database.list_jobs()} == {"Backend Engineer", "Platform Engineer"}
+
+
+async def test_ad_hoc_crawl_never_closes_existing_jobs(
+    config: AppConfig, database: Database
+) -> None:
+    """A configured crawl closes delisted roles; an ad-hoc re-crawl must not."""
+    from jobos.config import CompanySettings
+
+    two = {"jobs": [_role(1, "Backend Engineer"), _role(2, "Platform Engineer")]}
+    async with httpx.AsyncClient(transport=_greenhouse_transport(two)) as client:
+        crawler = CareerCrawler(config, database, client=client, allow_private_networks=True)
+        await crawler.crawl("acme")
+    assert len(database.list_jobs()) == 2
+
+    # Same source, ad-hoc, now returning only one role: the other must stay active.
+    one = {"jobs": [_role(1, "Backend Engineer")]}
+    async with httpx.AsyncClient(transport=_greenhouse_transport(one)) as client:
+        crawler = CareerCrawler(config, database, client=client, allow_private_networks=True)
+        summary = await crawler.crawl_settings(
+            CompanySettings(name="Acme", url="https://boards.greenhouse.io/acme")
+        )
+    assert summary.jobs_closed == 0
+    assert len(database.list_jobs()) == 2

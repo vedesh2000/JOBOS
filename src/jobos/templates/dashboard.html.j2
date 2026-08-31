@@ -14,11 +14,18 @@
       <option value="{{ slug }}">{{ company.name }}</option>
       {% endfor %}
     </select>
-    <button type="submit" class="btn primary" {% if crawl.running or not configured %}disabled{% endif %}>
+    <input type="url" name="url" class="url-input" inputmode="url"
+           placeholder="…or paste any careers URL" aria-label="Career page URL to crawl">
+    <button type="submit" class="btn primary" {% if crawl.running %}disabled{% endif %}>
       Crawl
     </button>
   </form>
 </div>
+<p class="subtle crawl-hint">
+  Pick a configured company, or paste any careers page or job-board URL to crawl it
+  once. Greenhouse, Lever, Ashby, SmartRecruiters and Workday links work best; other
+  sites are read where the page exposes its postings.
+</p>
 
 {% if not configured %}
 <div class="flash warn">

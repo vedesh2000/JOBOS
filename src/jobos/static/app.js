@@ -117,13 +117,15 @@
           body: new FormData(form),
         })
           .then(function (response) {
-            if (response.status === 409) {
-              return response.json().then(function (data) {
-                throw new Error(data.detail || "A crawl is already running.");
-              });
-            }
             if (!response.ok) {
-              throw new Error("Could not start the crawl.");
+              return response
+                .json()
+                .catch(function () {
+                  return {};
+                })
+                .then(function (data) {
+                  throw new Error(data.detail || "Could not start the crawl.");
+                });
             }
             return response.json();
           })

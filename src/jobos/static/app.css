@@ -84,6 +84,8 @@ main { max-width: 1180px; margin: 0 auto; padding: 22px 20px 60px; }
 }
 @keyframes jobos-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
+.url-input { min-width: 240px; }
+.crawl-hint { margin: 6px 0 14px; }
 
 /* surfaces */
 .card {

@@ -279,6 +279,23 @@ companies:
 India-based roles. To find a company's real board, look at where its careers page
 submits applications; most product companies use Greenhouse, Lever, or Ashby.
 
+### Crawling a one-off URL
+
+You do not have to add a company to config to try it. Paste any careers-page or
+job-board URL and JobOS crawls it once, storing the jobs under an employer name
+derived from the URL:
+
+```bash
+jobos crawl https://boards.greenhouse.io/somecompany
+jobos crawl https://careers.example.com/jobs --name "Example"
+```
+
+In the web dashboard, the crawl bar has a URL box next to the company dropdown for the
+same thing. Ad-hoc crawls use the same adapters as configured ones (Greenhouse, Lever,
+Ashby, SmartRecruiters, Workday by host; JSON-LD/HTML otherwise), apply the same SSRF
+protection, and never close jobs from a previous run. They are not written to config,
+so re-crawling means pasting the URL again — add it under `companies:` to keep it.
+
 ---
 
 ## Command reference
@@ -305,7 +322,7 @@ submits applications; most product companies use Greenhouse, Lever, or Ashby.
 
 | Command | Purpose |
 | --- | --- |
-| `jobos crawl [company]` | fetch postings from configured boards |
+| `jobos crawl [company\|url]` | fetch postings from configured boards, or a pasted career-page URL |
 | `jobos search [query]` | search stored jobs |
 | `jobos analyse <job_id>` | analyse and score one job |
 | `jobos analyse-all [query]` | analyse and score a filtered set |

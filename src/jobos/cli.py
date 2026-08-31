@@ -299,13 +299,25 @@ def resume_versions(json_output: Annotated[bool, typer.Option("--json")] = False
 @app.command()
 def crawl(
     company: Annotated[
-        str | None, typer.Argument(help="Company key from config.yaml. Omit to crawl all.")
+        str | None,
+        typer.Argument(
+            help="Company key from config.yaml, or a full career-page URL to crawl "
+            "ad-hoc. Omit to crawl all configured companies."
+        ),
     ] = None,
+    name: Annotated[
+        str,
+        typer.Option(help="Employer name for an ad-hoc URL crawl (derived from the URL if omitted)."),
+    ] = "",
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
-    """Crawl configured career pages and store new jobs."""
+    """Crawl configured career pages, or any career-page URL, and store new jobs."""
     service = _service()
-    summary = _run(service.crawl(company))
+    target = (company or "").strip()
+    if target.lower().startswith(("http://", "https://")):
+        summary = _run(service.crawl_url(target, name or None))
+    else:
+        summary = _run(service.crawl(company))
     if json_output:
         _emit(summary.model_dump(mode="json"))
         raise typer.Exit(0 if not summary.errors else 1)

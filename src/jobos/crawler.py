@@ -210,6 +210,39 @@ def parse_json_ld_jobs(html: str, company: str, source_url: str) -> list[JobData
     return jobs
 
 
+_ATS_NAME_HOSTS = ("greenhouse.io", "lever.co", "ashbyhq.com", "smartrecruiters.com")
+_CAREER_SUBDOMAINS = {
+    "www", "careers", "career", "jobs", "job", "boards", "board", "apply", "work", "join", "talent",
+}
+
+
+def _humanise(slug: str) -> str:
+    text = re.sub(r"[-_]+", " ", slug).strip()
+    return text.title() if text else "Careers"
+
+
+def derive_company_name(url: str) -> str:
+    """Best-effort employer name from a career-page URL, for ad-hoc crawls.
+
+    ATS boards put the employer in the first path segment (greenhouse.io/<slug>),
+    Workday puts the tenant in the host, and any other site falls back to the most
+    specific domain label with common prefixes (www, careers, jobs) stripped.
+    """
+    parsed = urlsplit(url)
+    host = (parsed.hostname or "").casefold()
+    path_parts = [part for part in parsed.path.split("/") if part]
+    if any(ats in host for ats in _ATS_NAME_HOSTS) and path_parts:
+        return _humanise(path_parts[0])
+    if "myworkdayjobs.com" in host or "myworkdaysite.com" in host:
+        return _humanise(host.split(".", 1)[0])
+    labels = [label for label in host.split(".") if label and label not in _CAREER_SUBDOMAINS]
+    if len(labels) >= 2:  # drop the TLD, keep the registrable-ish label
+        return _humanise(labels[-2])
+    if labels:
+        return _humanise(labels[0])
+    return "Careers"
+
+
 class CareerCrawler:
     """Crawl only configured company pages and persist normalized jobs."""
 
@@ -240,7 +273,30 @@ class CareerCrawler:
         summary = CrawlSummary(companies_requested=len(selected))
         if not selected:
             return summary
+        await self._crawl_with_client(selected, summary, close_missing=True)
+        return summary
 
+    async def crawl_settings(self, company: CompanySettings) -> CrawlSummary:
+        """Crawl a single ad-hoc source that is not in config, e.g. a pasted URL.
+
+        Dispatch is identical to a configured crawl (an ATS host uses its adapter, any
+        other page falls back to JSON-LD/HTML), and SSRF protection still applies.
+        Unlike a configured crawl this never closes previously stored jobs: an ad-hoc,
+        possibly partial fetch should only add or refresh, never retire earlier ones.
+        """
+        summary = CrawlSummary(companies_requested=1)
+        await self._crawl_with_client(
+            {f"url:{canonical_url(company.url)}": company}, summary, close_missing=False
+        )
+        return summary
+
+    async def _crawl_with_client(
+        self,
+        selected: dict[str, CompanySettings],
+        summary: CrawlSummary,
+        *,
+        close_missing: bool,
+    ) -> None:
         if self._client is None:
             timeout = httpx.Timeout(self.config.crawler.timeout_seconds)
             async with httpx.AsyncClient(
@@ -250,15 +306,18 @@ class CareerCrawler:
             ) as client:
                 self._client = client
                 try:
-                    await self._crawl_selected(selected, summary)
+                    await self._crawl_selected(selected, summary, close_missing=close_missing)
                 finally:
                     self._client = None
         else:
-            await self._crawl_selected(selected, summary)
-        return summary
+            await self._crawl_selected(selected, summary, close_missing=close_missing)
 
     async def _crawl_selected(
-        self, selected: dict[str, CompanySettings], summary: CrawlSummary
+        self,
+        selected: dict[str, CompanySettings],
+        summary: CrawlSummary,
+        *,
+        close_missing: bool = True,
     ) -> None:
         company_limit = asyncio.Semaphore(min(self.config.crawler.concurrency, 5))
 
@@ -295,8 +354,9 @@ class CareerCrawler:
                     summary.jobs_updated += 1
             # A board that filled the limit was almost certainly cut short, and the
             # postings past the cut were never seen, so closing them would be wrong.
-            # Only a board read in full can tell us what it no longer lists.
-            if len(result) < limit:
+            # Only a board read in full can tell us what it no longer lists. Ad-hoc
+            # URL crawls opt out entirely (close_missing=False).
+            if close_missing and len(result) < limit:
                 summary.jobs_closed += self.database.deactivate_missing_jobs(
                     selected[slug].name, fingerprints
                 )

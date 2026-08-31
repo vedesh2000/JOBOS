@@ -5,9 +5,11 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import shutil
+from collections.abc import Coroutine
 from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 
 from jobos.agents import (
     ATSAgent,
@@ -22,8 +24,8 @@ from jobos.agents import (
 )
 from jobos.ai import AIClient, AIError
 from jobos.ats import mentioned_skills
-from jobos.config import AppConfig
-from jobos.crawler import CareerCrawler
+from jobos.config import AppConfig, CompanySettings
+from jobos.crawler import CareerCrawler, derive_company_name
 from jobos.database import Database
 from jobos.models import (
     ApplicationStatus,
@@ -38,6 +40,7 @@ from jobos.models import (
     ResumeImportResult,
     ResumeVersionView,
     utc_now,
+    validate_web_url,
 )
 from jobos.renderer import (
     PackageWriter,
@@ -200,26 +203,61 @@ class JobOSService:
         crawler = CareerCrawler(self.config, self.database)
         return await crawler.crawl(company)
 
+    async def crawl_url(self, url: str, name: str | None = None) -> CrawlSummary:
+        """Crawl a single career page or board URL that is not in config.
+
+        Uses the same adapters as a configured crawl (Greenhouse/Lever/Ashby/etc. by
+        host, generic HTML/JSON-LD otherwise) and stores jobs under a derived employer
+        name. SSRF protection applies. The source is not written to config, so a
+        re-crawl means pasting the URL again.
+        """
+        clean = self._validate_crawl_url(url)
+        settings = CompanySettings(
+            name=(name or "").strip() or derive_company_name(clean), url=clean
+        )
+        crawler = CareerCrawler(self.config, self.database)
+        return await crawler.crawl_settings(settings)
+
+    @staticmethod
+    def _validate_crawl_url(url: str) -> str:
+        try:
+            return validate_web_url(url.strip())
+        except ValueError as exc:
+            raise ServiceError(f"That does not look like a web address: {exc}") from exc
+
     async def start_background_crawl(self, company: str | None = None) -> None:
-        """Kick off a crawl for the web UI without holding the HTTP request open."""
+        """Kick off a crawl of configured companies for the web UI, without blocking."""
         if self.crawl_progress.running:
             raise ServiceError("A crawl is already running.")
         if not self.config.companies:
             raise ServiceError(
                 "No companies configured. Add entries under `companies:` in config.yaml."
             )
+        label = company or f"{len(self.config.companies)} configured companies"
+        self._launch_background_crawl(self.crawl(company), label)
+
+    async def start_background_url_crawl(self, url: str, name: str | None = None) -> None:
+        """Kick off an ad-hoc crawl of a pasted URL for the web UI, without blocking."""
+        if self.crawl_progress.running:
+            raise ServiceError("A crawl is already running.")
+        clean = self._validate_crawl_url(url)
+        label = (name or "").strip() or derive_company_name(clean)
+        self._launch_background_crawl(self.crawl_url(clean, name), label)
+
+    def _launch_background_crawl(
+        self, work: Coroutine[Any, Any, CrawlSummary], label: str
+    ) -> None:
         self.crawl_progress = CrawlProgress(
             running=True,
-            label=company or f"{len(self.config.companies)} configured companies",
+            label=label,
             started_at=utc_now().isoformat(timespec="seconds"),
         )
-        self._crawl_task = asyncio.create_task(self._run_background_crawl(company))
+        self._crawl_task = asyncio.create_task(self._run_background_crawl(work))
 
-    async def _run_background_crawl(self, company: str | None) -> None:
+    async def _run_background_crawl(self, work: Coroutine[Any, Any, CrawlSummary]) -> None:
         async with self._crawl_lock:
             try:
-                summary = await self.crawl(company)
-                self.crawl_progress.summary = summary
+                self.crawl_progress.summary = await work
             except Exception as exc:
                 self.crawl_progress.error = str(exc)
             finally:

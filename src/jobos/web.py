@@ -231,16 +231,27 @@ def create_app(config: AppConfig | None = None, service: JobOSService | None = N
         )
 
     @app.post("/crawl", include_in_schema=False)
-    async def start_crawl(request: Request, company: Annotated[str, Form()] = "") -> Response:
+    async def start_crawl(
+        request: Request,
+        company: Annotated[str, Form()] = "",
+        url: Annotated[str, Form()] = "",
+    ) -> Response:
         service = get_service(request)
         # The dashboard JS posts with Accept: application/json so it can stay on the
         # page and poll for progress. A plain form post (no JS) still redirects back.
         wants_json = "application/json" in request.headers.get("accept", "")
         try:
-            await service.start_background_crawl(company.strip() or None)
+            if url.strip():
+                # Ad-hoc: crawl any career page the user pastes, not just configured ones.
+                await service.start_background_url_crawl(url.strip())
+            else:
+                await service.start_background_crawl(company.strip() or None)
         except ServiceError as exc:
+            # 409 only when a crawl is already running; other issues (bad URL, no
+            # companies) are the caller's input, so 400.
+            status = 409 if "already running" in str(exc).casefold() else 400
             if wants_json:
-                return JSONResponse({"detail": str(exc)}, status_code=409)
+                return JSONResponse({"detail": str(exc)}, status_code=status)
             return back("/", error=str(exc))
         if wants_json:
             return JSONResponse(_crawl_status(service), status_code=202)

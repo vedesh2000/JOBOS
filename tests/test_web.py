@@ -68,3 +68,37 @@ def test_plain_crawl_post_still_redirects(service: JobOSService, monkeypatch) ->
     response = client.post("/crawl", data={"company": ""}, follow_redirects=False)
     assert response.status_code == 303
     assert response.headers["location"].startswith("/")
+
+
+def test_crawl_url_field_triggers_ad_hoc_path(service: JobOSService, monkeypatch) -> None:
+    """Posting a `url` uses the ad-hoc crawl, not the configured-company crawl."""
+    seen: dict[str, object] = {}
+
+    async def fake_url_crawl(url: str, name: str | None = None) -> None:
+        seen["url"] = url
+        service.crawl_progress = CrawlProgress(running=True, label="Acme")
+
+    async def fake_company_crawl(company: str | None = None) -> None:
+        seen["company"] = company
+
+    monkeypatch.setattr(service, "start_background_url_crawl", fake_url_crawl)
+    monkeypatch.setattr(service, "start_background_crawl", fake_company_crawl)
+    client = TestClient(create_app(service=service))
+
+    response = client.post(
+        "/crawl",
+        data={"url": "https://boards.greenhouse.io/acme", "company": ""},
+        headers={"Accept": "application/json"},
+    )
+    assert response.status_code == 202
+    assert seen == {"url": "https://boards.greenhouse.io/acme"}
+
+
+def test_crawl_bad_url_is_400_json(service: JobOSService) -> None:
+    """A malformed ad-hoc URL is a 400 the poller can surface, not a 409."""
+    client = TestClient(create_app(service=service))
+    response = client.post(
+        "/crawl", data={"url": "not-a-url"}, headers={"Accept": "application/json"}
+    )
+    assert response.status_code == 400
+    assert "web address" in response.json()["detail"].lower()
