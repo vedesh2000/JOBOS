@@ -51,6 +51,14 @@ preferences:
   # so an unanalysed shortlist is never emptied by it.
   roles_include: []              # title must contain one of these (empty = any)
   roles_exclude: []              # title must contain none of these
+  # Tech-stack filters. These read the posting's skills, title, description and
+  # experience text, matched on whole tokens, so excluding "java" keeps JavaScript
+  # roles, and known aliases fold together ("reactjs" counts as react, "k8s" as
+  # kubernetes). Terms outside the known vocabulary match literally, so free-form
+  # entries like "full stack" work. Ad-hoc equivalents on the CLI:
+  #   jobos search --skill python --skill react --exclude-skill "spring boot"
+  skills_include: []             # job must mention one of these (empty = any stack)
+  skills_exclude: []             # job must mention none of these; exclude beats include
   min_years:                     # lower bound of a job's required years (blank = none)
   max_years:                     # upper bound (blank = none)
   seniority: ""                  # exact seniority for analysed jobs (empty = any)

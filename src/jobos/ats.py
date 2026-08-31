@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Final
 
@@ -156,6 +157,30 @@ def skill_in_text(skill: str, text: str) -> bool:
 def extract_known_skills(text: str) -> list[str]:
     found = [skill for skill in KNOWN_SKILLS if skill_in_text(skill, text)]
     return sorted({canonical_skill(skill) for skill in found})
+
+
+def mentioned_skills(terms: Iterable[str], text: str) -> set[str]:
+    """Return the canonical form of every term the text mentions.
+
+    ``skill_in_text`` re-normalizes its text argument on each call, which is fine for
+    a single lookup but wasteful when thousands of postings are tested against the
+    same term list, so the text is normalized once here.
+
+    Terms outside the known vocabulary still work: they fall back to matching their
+    own normalized form, so a free-form term such as "full stack" is usable without
+    being added to ``KNOWN_SKILLS``. Matching stays token-delimited, which is why
+    "java" does not match "JavaScript".
+    """
+    padded = f" {normalize_text(text)} "
+    found: set[str] = set()
+    for term in terms:
+        if not term.strip():
+            continue
+        canonical = canonical_skill(term)
+        variants = SKILL_ALIASES.get(canonical, {term, canonical})
+        if any(f" {normalize_text(variant)} " in padded for variant in variants):
+            found.add(canonical)
+    return found
 
 
 def _resume_context(resume: StructuredResume) -> tuple[str, str, str]:

@@ -59,12 +59,16 @@ class CrawlerSettings(StrictModel):
 class PreferenceSettings(StrictModel):
     """What counts as a job that fits you, applied together by `search --preferred`.
 
-    Title include/exclude and location work on any job. The years window only
+    Title include/exclude, location and skills work on any job. The years window only
     constrains jobs that have been analysed (the requirement is extracted during
     analysis); unanalysed jobs are not dropped by it, so a pre-analysis shortlist is
     never empty.
     """
 
+    # A job's location must contain one of these. Matching any entry means both
+    # spellings of a city can be listed, so "Bengaluru" and "Bangalore" are covered by
+    # one search. Ignored when an explicit location is passed, which has already
+    # narrowed the query. Empty = any location.
     preferred_locations: list[str] = Field(default_factory=list, max_length=100)
     remote_only: bool = False
     minimum_match_score: int = Field(default=45, ge=0, le=100)
@@ -72,6 +76,15 @@ class PreferenceSettings(StrictModel):
     roles_include: list[str] = Field(default_factory=list, max_length=100)
     # Title must contain none of these (case-insensitive).
     roles_exclude: list[str] = Field(default_factory=list, max_length=100)
+    # Tech-stack filters. Unlike the title filters above these read the posting's
+    # skills, title, description and experience text, matched on whole tokens, so
+    # excluding "java" never excludes "JavaScript" and known aliases fold together
+    # ("k8s" counts as kubernetes, "reactjs" as react). Terms outside the known
+    # vocabulary work too, matched literally, e.g. "full stack".
+    # The job must mention at least one of these. Empty = allow any stack.
+    skills_include: list[str] = Field(default_factory=list, max_length=100)
+    # The job must mention none of these; exclusion wins over inclusion.
+    skills_exclude: list[str] = Field(default_factory=list, max_length=100)
     # Required-years window for analysed jobs. None = no bound on that side.
     min_years: float | None = Field(default=None, ge=0, le=60)
     max_years: float | None = Field(default=None, ge=0, le=60)

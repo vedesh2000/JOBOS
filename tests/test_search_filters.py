@@ -241,3 +241,189 @@ def test_since_hours_limits_results_to_recent_jobs(service: JobOSService) -> Non
     assert {job.id for job in service.search_jobs(since_hours=24)} == {recent}
     # Without a window both roles are returned.
     assert {job.id for job in service.search_jobs()} == {recent, stale}
+
+
+def _seed_stack(
+    service: JobOSService,
+    title: str,
+    *,
+    fp: str,
+    description: str,
+    skills: list[str] | None = None,
+) -> int:
+    """Seed a job with a specific tech stack, without any stored analysis."""
+    job_data = JobData(
+        company="Acme",
+        title=title,
+        location="Bengaluru, India",
+        description=description,
+        skills=skills or [],
+        apply_url=f"https://boards.greenhouse.io/acme/jobs/{fp}",
+        source_url="https://boards.greenhouse.io/acme",
+        external_id=fp,
+    )
+    view, _ = service.database.upsert_job(job_data, fingerprint=fp)
+    return view.id
+
+
+def test_skills_include_is_any_of(service: JobOSService) -> None:
+    """A job needs only one of the wanted skills, and unrelated stacks drop out."""
+    python_job = _seed_stack(
+        service, "Backend Engineer", fp="s1", description="Build services in Python and Django."
+    )
+    react_job = _seed_stack(
+        service, "Frontend Engineer", fp="s2", description="Ship UI with React and TypeScript."
+    )
+    rust_job = _seed_stack(
+        service, "Systems Engineer", fp="s3", description="Low latency work in Rust and C++."
+    )
+
+    ids = {job.id for job in service.search_jobs(skills_include=["python", "react"])}
+    assert python_job in ids
+    assert react_job in ids
+    assert rust_job not in ids
+
+
+def test_skills_exclude_does_not_confuse_java_with_javascript(service: JobOSService) -> None:
+    """Token matching keeps JavaScript roles when Java is excluded."""
+    java_job = _seed_stack(
+        service, "Backend Engineer", fp="s4", description="Strong Java and Spring Boot required."
+    )
+    js_job = _seed_stack(
+        service,
+        "Full Stack Engineer",
+        fp="s5",
+        description="JavaScript, Node.js and React across the stack.",
+    )
+
+    ids = {job.id for job in service.search_jobs(skills_exclude=["java"])}
+    assert js_job in ids
+    assert java_job not in ids
+
+
+def test_skills_filter_reads_stored_skills_and_title(service: JobOSService) -> None:
+    """The crawler's canonical skills list and the title both count as evidence."""
+    from_skills = _seed_stack(
+        service,
+        "Platform Engineer",
+        fp="s6",
+        description="Work on our internal platform.",
+        skills=["python", "kubernetes"],
+    )
+    from_title = _seed_stack(
+        service, "Full-Stack Engineer", fp="s7", description="Own features end to end."
+    )
+    neither = _seed_stack(
+        service, "Data Engineer", fp="s8", description="Pipelines in Scala and Spark."
+    )
+
+    ids = {job.id for job in service.search_jobs(skills_include=["python", "full stack"])}
+    # "Full-Stack" in the title normalizes to "full stack", so a free-form term works.
+    assert from_skills in ids
+    assert from_title in ids
+    assert neither not in ids
+
+
+def test_skills_exclude_wins_over_include(service: JobOSService) -> None:
+    """A job matching both lists is dropped, mirroring the title filter semantics."""
+    both = _seed_stack(
+        service, "Backend Engineer", fp="s9", description="Python and Java microservices."
+    )
+    clean = _seed_stack(
+        service, "Backend Engineer", fp="s10", description="Python and PostgreSQL only."
+    )
+
+    ids = {
+        job.id
+        for job in service.search_jobs(skills_include=["python"], skills_exclude=["java"])
+    }
+    assert clean in ids
+    assert both not in ids
+
+
+def test_preferences_apply_skill_filters(service: JobOSService) -> None:
+    """`--preferred` picks the skill lists up from config like the other filters."""
+    service.config.preferences.roles_include = []
+    service.config.preferences.roles_exclude = []
+    service.config.preferences.minimum_match_score = 0
+    service.config.preferences.max_years = None
+    service.config.preferences.skills_include = ["python", "react"]
+    service.config.preferences.skills_exclude = ["java"]
+
+    wanted = _seed_stack(
+        service, "Backend Engineer", fp="s11", description="Python, FastAPI, PostgreSQL."
+    )
+    java_heavy = _seed_stack(
+        service, "Backend Engineer", fp="s12", description="Java, Spring Boot, Kafka."
+    )
+    off_stack = _seed_stack(
+        service, "Backend Engineer", fp="s13", description="Ruby on Rails shop."
+    )
+
+    ids = {job.id for job in service.search_jobs(apply_preferences=True)}
+    assert wanted in ids
+    assert java_heavy not in ids
+    assert off_stack not in ids
+
+
+def test_explicit_skill_filter_scans_beyond_the_row_limit(service: JobOSService) -> None:
+    """An explicit skill filter must widen the DB fetch, not filter only the first page."""
+    for index in range(12):
+        _seed_stack(
+            service, "Backend Engineer", fp=f"bulk{index}", description="Java and Spring Boot."
+        )
+    needle = _seed_stack(
+        service, "Backend Engineer", fp="needle", description="Python and FastAPI."
+    )
+
+    # The Python job was seeded last, so a naive limit=3 fetch would miss it if the
+    # skill filter ran after the limit instead of before it.
+    jobs = service.search_jobs(skills_include=["python"], limit=3, sort="oldest")
+    assert needle in {job.id for job in jobs}
+
+
+def _seed_at(service: JobOSService, location: str, *, fp: str) -> int:
+    """Seed a job in a given location with a stack that passes the skill filters."""
+    job_data = JobData(
+        company="Acme",
+        title="Backend Engineer",
+        location=location,
+        description="Python and FastAPI services.",
+        apply_url=f"https://boards.greenhouse.io/acme/jobs/{fp}",
+        source_url="https://boards.greenhouse.io/acme",
+        external_id=fp,
+    )
+    view, _ = service.database.upsert_job(job_data, fingerprint=fp)
+    return view.id
+
+
+def test_preferred_locations_match_any_spelling(service: JobOSService) -> None:
+    """One search covers both spellings of a city and drops other places."""
+    service.config.preferences.preferred_locations = ["Bengaluru", "Bangalore", "Remote"]
+    service.config.preferences.minimum_match_score = 0
+    service.config.preferences.max_years = None
+
+    bengaluru = _seed_at(service, "Bengaluru, India", fp="l1")
+    bangalore = _seed_at(service, "Bangalore, India", fp="l2")
+    remote = _seed_at(service, "Remote - India", fp="l3")
+    dublin = _seed_at(service, "Dublin, Ireland", fp="l4")
+
+    ids = {job.id for job in service.search_jobs(apply_preferences=True)}
+    assert {bengaluru, bangalore, remote} <= ids
+    assert dublin not in ids
+
+
+def test_explicit_location_overrides_preferred_locations(service: JobOSService) -> None:
+    """Asking for one place must not be widened back out by the preferred list."""
+    service.config.preferences.preferred_locations = ["Bengaluru", "Bangalore"]
+    service.config.preferences.minimum_match_score = 0
+    service.config.preferences.max_years = None
+
+    bengaluru = _seed_at(service, "Bengaluru, India", fp="l5")
+    bangalore = _seed_at(service, "Bangalore, India", fp="l6")
+
+    ids = {
+        job.id for job in service.search_jobs(location="Bengaluru", apply_preferences=True)
+    }
+    assert bengaluru in ids
+    assert bangalore not in ids

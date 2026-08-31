@@ -21,6 +21,7 @@ from jobos.agents import (
     TruthGuard,
 )
 from jobos.ai import AIClient, AIError
+from jobos.ats import mentioned_skills
 from jobos.config import AppConfig
 from jobos.crawler import CareerCrawler
 from jobos.database import Database
@@ -236,6 +237,8 @@ class JobOSService:
         max_years: float | None = None,
         min_years: float | None = None,
         seniority: str = "",
+        skills_include: list[str] | None = None,
+        skills_exclude: list[str] | None = None,
         since_hours: float | None = None,
         sort: str = "newest",
         limit: int = 200,
@@ -256,22 +259,39 @@ class JobOSService:
                 min_years = prefs.min_years
             if not seniority:
                 seniority = prefs.seniority
-        # Preference/experience/role filters run in Python, so fetch a wide set and
-        # re-apply the limit afterwards.
+            if skills_include is None:
+                skills_include = prefs.skills_include
+            if skills_exclude is None:
+                skills_exclude = prefs.skills_exclude
+        wanted_skills = skills_include or []
+        unwanted_skills = skills_exclude or []
+        # Preference/experience/role/skill filters run in Python, so fetch a wide set
+        # and re-apply the limit afterwards. Any filter added here must be listed, or
+        # it would only see the first `limit` rows and silently under-return.
         needs_python_filter = (
             max_years is not None
             or min_years is not None
             or bool(seniority)
+            or bool(wanted_skills)
+            or bool(unwanted_skills)
             or apply_preferences
         )
         db_limit = limit if not needs_python_filter else 5_000
         since = (
             utc_now() - timedelta(hours=since_hours) if since_hours and since_hours > 0 else None
         )
+        # An explicit `location` is already a narrower request, so the preferred list
+        # only applies when the caller did not name a place. It is pushed into SQL
+        # because `list_jobs` caps how many rows it returns, and on a corpus this size
+        # that cap is reached long before the Python filters below get to run.
+        preferred_places = (
+            prefs.preferred_locations if apply_preferences and not location else None
+        )
         jobs = self.database.list_jobs(
             search=search,
             company=company,
             location=location,
+            locations=preferred_places,
             status=status,
             minimum_score=minimum_score,
             since=since,
@@ -290,6 +310,9 @@ class JobOSService:
                     for job in jobs
                     if job.match_score is None or job.match_score >= lenient_score
                 ]
+        if wanted_skills or unwanted_skills:
+            # Reads the posting text, so this works before a job has been analysed.
+            jobs = self._filter_by_skills(jobs, wanted_skills, unwanted_skills)
         if max_years is not None or min_years is not None or seniority:
             # Under preferences, unanalysed jobs are kept (requirement unknown until
             # analysis); an explicit flag is strict and drops them.
@@ -313,6 +336,39 @@ class JobOSService:
             if includes and not any(term in title for term in includes):
                 continue
             if any(term in title for term in excludes):
+                continue
+            result.append(job)
+        return result
+
+    @staticmethod
+    def _filter_by_skills(
+        jobs: list[JobView], include: list[str], exclude: list[str]
+    ) -> list[JobView]:
+        """Keep jobs that mention a wanted part of the stack and none of the unwanted.
+
+        Include is any-of, exclude wins over include, and an empty list means "no
+        opinion" — the same semantics as the title filters. Each posting's stored
+        skills, title, experience line and description are searched together, so the
+        filter is useful before a job has been analysed.
+
+        Matching is token-delimited via :func:`mentioned_skills`, so excluding "java"
+        keeps a JavaScript role. Note that exclusion drops a posting that merely
+        mentions the term anywhere, which will also drop polyglot postings such as
+        "Java or Python"; leave a language out of ``exclude`` and rely on ``include``
+        if you would still take those.
+        """
+        includes = [term for term in include if term.strip()]
+        excludes = [term for term in exclude if term.strip()]
+        if not includes and not excludes:
+            return jobs
+        result: list[JobView] = []
+        for job in jobs:
+            haystack = " ".join(
+                [job.title, job.experience, " ".join(job.skills), job.description]
+            )
+            if excludes and mentioned_skills(excludes, haystack):
+                continue
+            if includes and not mentioned_skills(includes, haystack):
                 continue
             result.append(job)
         return result

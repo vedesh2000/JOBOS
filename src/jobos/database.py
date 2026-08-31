@@ -17,6 +17,7 @@ from sqlalchemy import (
     String,
     Text,
     create_engine,
+    or_,
 )
 from sqlalchemy import event as sqlalchemy_event
 from sqlalchemy.engine import Engine
@@ -262,6 +263,7 @@ class Database:
         search: str = "",
         company: str = "",
         location: str = "",
+        locations: list[str] | None = None,
         status: JobStatus | None = None,
         minimum_score: int | None = None,
         since: datetime | None = None,
@@ -286,6 +288,15 @@ class Database:
             query = query.where(JobRecord.company == company)
         if location:
             query = query.where(JobRecord.location.ilike(f"%{location}%"))
+        if locations:
+            # Any-of, so both spellings of a city can be supplied at once. Applied in
+            # SQL rather than in Python because the row cap below is reached long
+            # before the preference filters run on a multi-board corpus.
+            patterns = [
+                JobRecord.location.ilike(f"%{place}%") for place in locations if place.strip()
+            ]
+            if patterns:
+                query = query.where(or_(*patterns))
         if status:
             query = query.where(JobRecord.status == status.value)
         if minimum_score is not None:
@@ -304,6 +315,31 @@ class Database:
         with self.session() as session:
             records = list(session.scalars(query))
         return [self._job_view(record) for record in records]
+
+    def deactivate_missing_jobs(self, company: str, seen_fingerprints: set[str]) -> int:
+        """Mark this company's postings that the latest crawl did not return as closed.
+
+        Rows are kept rather than deleted so an application already prepared against a
+        posting still resolves; they simply stop showing up in ``list_jobs``.
+
+        Only safe to call when the whole board was read. A crawl truncated by
+        ``per_company_limit`` never sees the tail of the board, and would close every
+        posting past the cut.
+        """
+        query = (
+            select(JobRecord)
+            .where(JobRecord.company == company)
+            .where(JobRecord.is_active.is_(True))
+        )
+        closed = 0
+        with self.session() as session:
+            for record in session.scalars(query):
+                if record.fingerprint in seen_fingerprints:
+                    continue
+                record.is_active = False
+                closed += 1
+            session.flush()
+        return closed
 
     def companies(self) -> list[str]:
         query = select(JobRecord.company).distinct().order_by(JobRecord.company)

@@ -373,6 +373,8 @@ class CrawlSummary(StrictModel):
     jobs_seen: int = 0
     jobs_added: int = 0
     jobs_updated: int = 0
+    # Postings a company's board no longer lists, so they stop appearing in searches.
+    jobs_closed: int = 0
     errors: dict[str, str] = Field(default_factory=dict)
 
 

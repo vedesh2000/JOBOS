@@ -23,7 +23,12 @@ from jobos.database import Database
 from jobos.models import CrawlSummary, JobData
 
 USER_AGENT = "JobOS/0.1 (+local personal job search; respectful crawler)"
-MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+# Guards against a single response exhausting memory. Kept generous enough for the
+# largest real boards: Greenhouse and Ashby return every description in one payload,
+# so a ~800-role board is already 9-12 MB and the old 8 MB ceiling silently failed
+# the biggest employers. The body is buffered in full by httpx, so the practical
+# peak is this value times crawler.concurrency.
+MAX_RESPONSE_BYTES = 32 * 1024 * 1024
 TRACKING_QUERY_PREFIXES = ("utm_", "ref", "source", "gh_src", "lever-")
 GENERIC_LINK_LABELS = {
     "apply",
@@ -272,19 +277,29 @@ class CareerCrawler:
                 summary.errors[slug] = str(result)
                 continue
             summary.companies_succeeded += 1
+            limit = self.config.crawler.per_company_limit
             seen: set[str] = set()
-            for job in result[: self.config.crawler.per_company_limit]:
+            fingerprints: set[str] = set()
+            for job in result[:limit]:
                 fingerprint = job_fingerprint(job)
                 key = f"{canonical_url(job.apply_url)}:{fingerprint}"
                 if key in seen:
                     continue
                 seen.add(key)
+                fingerprints.add(fingerprint)
                 _, created = self.database.upsert_job(job, fingerprint)
                 summary.jobs_seen += 1
                 if created:
                     summary.jobs_added += 1
                 else:
                     summary.jobs_updated += 1
+            # A board that filled the limit was almost certainly cut short, and the
+            # postings past the cut were never seen, so closing them would be wrong.
+            # Only a board read in full can tell us what it no longer lists.
+            if len(result) < limit:
+                summary.jobs_closed += self.database.deactivate_missing_jobs(
+                    selected[slug].name, fingerprints
+                )
 
     async def _crawl_company(self, company: CompanySettings) -> list[JobData]:
         await self._validate_public_url(company.url)
@@ -455,6 +470,7 @@ class CareerCrawler:
         jobs: list[JobData] = []
         offset = 0
         limit = min(20, self.config.crawler.per_company_limit)
+        seen_paths: set[str] = set()
         while len(jobs) < self.config.crawler.per_company_limit:
             payload = await self._json_request(
                 "POST",
@@ -465,12 +481,15 @@ class CareerCrawler:
             postings = _list_field(payload, "jobPostings")
             if not postings:
                 break
+            new_on_page = 0
             for item in postings:
                 if not isinstance(item, dict):
                     continue
                 external_path = _as_text(item.get("externalPath"))
-                if not external_path:
+                if not external_path or external_path in seen_paths:
                     continue
+                seen_paths.add(external_path)
+                new_on_page += 1
                 detail = await self._json_request(
                     "GET", f"{base}{external_path}", honor_robots=False
                 )
@@ -493,9 +512,19 @@ class CareerCrawler:
                 )
                 if len(jobs) >= self.config.crawler.per_company_limit:
                     break
+            if not new_on_page:
+                # Some tenants answer out-of-range offsets by replaying an earlier
+                # page instead of returning nothing, so an all-duplicate page is the
+                # real end of the list.
+                break
             offset += len(postings)
             total = payload.get("total") if isinstance(payload, dict) else None
-            if offset >= (int(total) if isinstance(total, (int, float)) else offset):
+            # Many tenants report a real total only on the first page and send 0 (or
+            # nothing) afterwards. Treating that as "no more results" stopped paging
+            # after two pages and capped every Workday board at 40 postings, so the
+            # total is only trusted when positive; the empty-page and no-new-postings
+            # guards above end the loop otherwise.
+            if isinstance(total, (int, float)) and total > 0 and offset >= int(total):
                 break
         return jobs
 

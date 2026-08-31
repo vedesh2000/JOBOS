@@ -311,6 +311,7 @@ def crawl(
         raise typer.Exit(0 if not summary.errors else 1)
     console.print(
         f"[green]{summary.jobs_added} added[/green], {summary.jobs_updated} updated, "
+        f"{summary.jobs_closed} closed, "
         f"{summary.jobs_seen} seen across "
         f"{summary.companies_succeeded}/{summary.companies_requested} companies."
     )
@@ -339,6 +340,20 @@ def search(
         str,
         typer.Option(help="Filter by seniority, e.g. Senior, Staff, Lead (analysed jobs only)."),
     ] = "",
+    skill: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--skill",
+            help="Require this skill; repeat for any-of, e.g. --skill python --skill react.",
+        ),
+    ] = None,
+    exclude_skill: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--exclude-skill",
+            help="Drop jobs mentioning this skill; repeat to exclude several.",
+        ),
+    ] = None,
     sort: Annotated[str, typer.Option(help="newest, oldest, score, company, title.")] = "newest",
     limit: Annotated[int, typer.Option(help="Maximum rows.")] = 50,
     preferred: Annotated[
@@ -360,6 +375,8 @@ def search(
         max_years=max_years,
         min_years=min_years,
         seniority=seniority,
+        skills_include=skill,
+        skills_exclude=exclude_skill,
         sort=sort,
         limit=limit,
         apply_preferences=preferred,
@@ -594,12 +611,20 @@ def analyse_all(
     location: Annotated[str, typer.Option(help="Location substring, e.g. India.")] = "",
     status: Annotated[str | None, typer.Option(help="new, saved, opened, applied, ignored.")] = None,
     limit: Annotated[int, typer.Option(help="Maximum jobs to analyse.")] = 25,
+    preferred: Annotated[
+        bool,
+        typer.Option(
+            "--preferred",
+            help="Only analyse roles passing your config preferences, so model time "
+            "is not spent on stacks and titles you have ruled out.",
+        ),
+    ] = False,
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Analyse and score every job matching a filter, so you can sort by match score.
 
     Analysis is what produces match scores and the years/seniority data, so run this
-    over a filtered set (for example `--location India backend`), then narrow with
+    over a filtered set (for example `--preferred --location India`), then narrow with
     `search --sort score --max-years 6`.
     """
     service = _service()
@@ -612,6 +637,7 @@ def analyse_all(
         location=location,
         status=JobStatus(status) if status else None,
         limit=limit,
+        apply_preferences=preferred,
     )
     if not jobs:
         console.print("[yellow]No jobs matched.[/yellow] Try `jobos crawl` or a broader filter.")

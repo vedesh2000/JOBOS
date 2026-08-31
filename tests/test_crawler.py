@@ -150,3 +150,77 @@ async def test_disabled_companies_are_skipped(config: AppConfig, database: Datab
     summary = await crawler.crawl()
     assert summary.companies_requested == 0
     assert database.list_jobs() == []
+
+
+def _role(job_id: int, title: str) -> dict[str, object]:
+    return {
+        "id": job_id,
+        "title": title,
+        "location": {"name": "Bengaluru, India"},
+        "absolute_url": f"https://boards.greenhouse.io/acme/jobs/{job_id}",
+        "content": "&lt;p&gt;Required: Python. 4+ years experience.&lt;/p&gt;",
+    }
+
+
+async def test_roles_dropped_from_the_board_are_closed(
+    config: AppConfig, database: Database
+) -> None:
+    """A posting the board stopped listing must leave the searchable set."""
+    first = {"jobs": [_role(1, "Backend Engineer"), _role(2, "Frontend Engineer")]}
+    async with httpx.AsyncClient(transport=_greenhouse_transport(first)) as client:
+        crawler = CareerCrawler(config, database, client=client, allow_private_networks=True)
+        await crawler.crawl("acme")
+    assert len(database.list_jobs()) == 2
+
+    # The second role is gone from the board on the next crawl.
+    second = {"jobs": [_role(1, "Backend Engineer")]}
+    async with httpx.AsyncClient(transport=_greenhouse_transport(second)) as client:
+        crawler = CareerCrawler(config, database, client=client, allow_private_networks=True)
+        summary = await crawler.crawl("acme")
+
+    assert summary.jobs_closed == 1
+    remaining = database.list_jobs()
+    assert len(remaining) == 1
+    assert remaining[0].title == "Backend Engineer"
+
+
+async def test_a_truncated_board_never_closes_the_roles_it_did_not_see(
+    config: AppConfig, database: Database
+) -> None:
+    """Hitting per_company_limit means the tail was never fetched, so nothing closes."""
+    config.crawler.per_company_limit = 3
+    full = {"jobs": [_role(index, f"Engineer {index}") for index in range(1, 6)]}
+    async with httpx.AsyncClient(transport=_greenhouse_transport(full)) as client:
+        crawler = CareerCrawler(config, database, client=client, allow_private_networks=True)
+        await crawler.crawl("acme")
+    stored = len(database.list_jobs())
+    assert stored == 3  # capped
+
+    async with httpx.AsyncClient(transport=_greenhouse_transport(full)) as client:
+        crawler = CareerCrawler(config, database, client=client, allow_private_networks=True)
+        summary = await crawler.crawl("acme")
+
+    assert summary.jobs_closed == 0
+    assert len(database.list_jobs()) == stored
+
+
+async def test_a_failed_company_does_not_close_its_roles(
+    config: AppConfig, database: Database
+) -> None:
+    """A transient board outage must not wipe out everything stored for it."""
+    payload = {"jobs": [_role(1, "Backend Engineer")]}
+    async with httpx.AsyncClient(transport=_greenhouse_transport(payload)) as client:
+        crawler = CareerCrawler(config, database, client=client, allow_private_networks=True)
+        await crawler.crawl("acme")
+    assert len(database.list_jobs()) == 1
+
+    def failing(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(failing)) as client:
+        crawler = CareerCrawler(config, database, client=client, allow_private_networks=True)
+        summary = await crawler.crawl("acme")
+
+    assert summary.errors  # the company failed
+    assert summary.jobs_closed == 0
+    assert len(database.list_jobs()) == 1
