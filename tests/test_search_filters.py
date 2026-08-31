@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
+
 from jobos.models import JobAnalysis, JobData, JobStatus
-from jobos.services import JobOSService
+from jobos.services import JobOSService, ServiceError
 
 
 def _seed(service: JobOSService, title: str, *, fp: str, years: float | None, level: str) -> int:
@@ -184,3 +188,56 @@ def test_exhausted_companies_are_hidden_unless_requested(service: JobOSService) 
     with_exhausted = service.company_shortlists(include_exhausted=True)
     acme = next(item for item in with_exhausted if item.company == "Acme")
     assert acme.exhausted is True and acme.picks == []
+
+
+async def test_daily_prepares_top_packages_and_is_idempotent(service: JobOSService) -> None:
+    """The daily run prepares the best packages, then reuses them on a second run."""
+    from tests.conftest import RESUME_MARKDOWN
+
+    await service.import_resume("master.md", RESUME_MARKDOWN.encode())
+    service.config.preferences.minimum_match_score = 0
+    service.config.preferences.max_applications_per_company = 3
+
+    best = _seed_scored(service, "Backend Engineer", company="Acme", fp="d1", score=90)
+    second = _seed_scored(service, "Software Engineer II", company="Acme", fp="d2", score=80)
+    _seed_scored(service, "Platform Engineer", company="Acme", fp="d3", score=70)
+
+    first_run = await service.run_daily(top=2, do_crawl=False)
+    prepared_ids = [item.job.id for item in first_run.prepared]
+    assert prepared_ids == [best, second], "only the two strongest are prepared"
+    assert not first_run.preparation_errors
+    for item in first_run.prepared:
+        assert Path(item.output_dir).is_dir(), "a reviewable package exists on disk"
+
+    # A second run must not redo the work; it reports the existing packages instead.
+    second_run = await service.run_daily(top=2, do_crawl=False)
+    assert second_run.prepared == []
+    assert {item.job.id for item in second_run.already_prepared} == {best, second}
+    assert len(second_run.ready) == 2
+
+
+async def test_daily_requires_a_master_resume(service: JobOSService) -> None:
+    """Without a resume there is nothing to tailor, and it should fail before crawling."""
+    with pytest.raises(ServiceError, match="resume"):
+        await service.run_daily(do_crawl=False)
+
+
+def test_since_hours_limits_results_to_recent_jobs(service: JobOSService) -> None:
+    """A recency window keeps newly seen roles and drops older ones."""
+    from datetime import UTC, datetime, timedelta
+
+    from jobos.database import JobRecord
+
+    recent = _seed_scored(service, "Backend Engineer", company="Acme", fp="r1", score=90)
+    stale = _seed_scored(service, "Software Engineer II", company="Acme", fp="r2", score=80)
+    service.config.preferences.minimum_match_score = 0
+
+    # Backdate one posting so it falls outside a 24 hour window.
+    with service.database.session() as session:
+        record = session.get(JobRecord, stale)
+        assert record is not None
+        record.first_seen_at = datetime.now(UTC) - timedelta(days=3)
+
+    assert {job.id for job in service.search_jobs(since_hours=24)} == {recent}
+    # Without a window both roles are returned.
+    assert {job.id for job in service.search_jobs()} == {recent, stale}

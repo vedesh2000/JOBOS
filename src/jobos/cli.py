@@ -454,6 +454,114 @@ def report(
     )
 
 
+@app.command()
+def daily(
+    query: Annotated[str, typer.Argument(help="Optional free text to narrow roles.")] = "",
+    location: Annotated[str, typer.Option(help="Location substring, e.g. India.")] = "",
+    since_hours: Annotated[
+        float | None,
+        typer.Option(help="Only consider roles first seen in the last N hours, e.g. 24."),
+    ] = None,
+    top: Annotated[int, typer.Option(help="How many tailored packages to prepare.")] = 10,
+    quota: Annotated[
+        int | None, typer.Option(help="Applications allowed per company. Defaults to config.")
+    ] = None,
+    analyse_limit: Annotated[
+        int, typer.Option(help="Maximum unanalysed roles to score this run.")
+    ] = 40,
+    no_crawl: Annotated[
+        bool, typer.Option("--no-crawl", help="Skip crawling and use stored jobs.")
+    ] = False,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """One morning run: crawl, score new roles, and prepare tailored resumes to review.
+
+    Everything up to your review is automated and then it stops. Nothing is submitted:
+    review each package, then run `jobos apply <job_id>` to open the employer's form
+    and `jobos status <job_id> applied` once you have submitted it.
+    """
+    service = _service()
+    result = _run(
+        service.run_daily(
+            search=query,
+            location=location,
+            since_hours=since_hours,
+            quota=quota,
+            top=top,
+            analyse_limit=analyse_limit,
+            do_crawl=not no_crawl,
+        )
+    )
+    if json_output:
+        _emit(
+            {
+                "crawl": result.crawl.model_dump(mode="json") if result.crawl else None,
+                "analysed": result.analysed,
+                "prepared": [
+                    {
+                        "job_id": item.job.id,
+                        "company": item.job.company,
+                        "title": item.job.title,
+                        "application_id": item.application_id,
+                        "output_dir": item.output_dir,
+                        "score_before": item.score_before,
+                        "score_after": item.score_after,
+                    }
+                    for item in result.ready
+                ],
+                "analysis_errors": {str(k): v for k, v in result.analysis_errors.items()},
+                "preparation_errors": {str(k): v for k, v in result.preparation_errors.items()},
+            }
+        )
+        return
+
+    if result.crawl is not None:
+        summary = result.crawl
+        console.print(
+            f"[green]Crawled[/green] {summary.jobs_added} new, {summary.jobs_updated} updated "
+            f"across {summary.companies_succeeded}/{summary.companies_requested} companies."
+        )
+    if result.analysed:
+        console.print(f"[green]Scored[/green] {result.analysed} newly relevant role(s).")
+    ready = result.ready
+    if not ready:
+        console.print(
+            "\n[yellow]Nothing to prepare.[/yellow] Widen the filters (drop --since-hours "
+            "or --location), or check `jobos report` to see what is available."
+        )
+        for job_id, message in result.preparation_errors.items():
+            console.print(f"[red]job {job_id}:[/red] {message}")
+        raise typer.Exit(1 if result.preparation_errors else 0)
+
+    table = Table(
+        title=f"{len(ready)} tailored package(s) ready to review", header_style="bold"
+    )
+    table.add_column("Job", justify="right")
+    table.add_column("Company")
+    table.add_column("Role")
+    table.add_column("ATS", justify="right")
+    table.add_column("Review then apply")
+    for item in ready:
+        table.add_row(
+            str(item.job.id),
+            item.job.company,
+            item.job.title[:44],
+            f"{item.score_before}→{item.score_after}",
+            f"jobos apply {item.job.id}",
+        )
+    console.print("")
+    console.print(table)
+    console.print("For each one you want:")
+    console.print("  1. open the PDF in its package directory and read it")
+    console.print("  2. [bold]jobos apply <job_id>[/bold] to open the employer's form")
+    console.print("  3. [bold]jobos status <job_id> applied[/bold] once submitted")
+    console.print("\nPackages:")
+    for item in ready:
+        console.print(f"  {item.job.id}: {item.output_dir}")
+    for job_id, message in result.preparation_errors.items():
+        console.print(f"[red]job {job_id}:[/red] {message}")
+
+
 @app.command("analyse")
 def analyse(
     job_id: Annotated[int, typer.Argument(help="Job ID from `jobos search`.")],

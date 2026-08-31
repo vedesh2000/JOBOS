@@ -264,11 +264,16 @@ class Database:
         location: str = "",
         status: JobStatus | None = None,
         minimum_score: int | None = None,
+        since: datetime | None = None,
         sort: str = "newest",
         limit: int = 1_000,
         offset: int = 0,
     ) -> list[JobView]:
         query: Select[tuple[JobRecord]] = select(JobRecord).where(JobRecord.is_active.is_(True))
+        if since is not None:
+            # `first_seen_at` is when JobOS first saw the posting, which is the best
+            # available proxy for "new to me" without a reliable employer post date.
+            query = query.where(JobRecord.first_seen_at >= since)
         if search:
             pattern = f"%{search}%"
             query = query.where(

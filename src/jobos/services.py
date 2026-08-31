@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import shutil
 from dataclasses import dataclass, field
+from datetime import timedelta
 from pathlib import Path
 
 from jobos.agents import (
@@ -37,7 +38,13 @@ from jobos.models import (
     ResumeVersionView,
     utc_now,
 )
-from jobos.renderer import PackageWriter, RenderedPackage, ResumeRenderer, open_apply_page
+from jobos.renderer import (
+    PackageWriter,
+    RenderedPackage,
+    RenderError,
+    ResumeRenderer,
+    open_apply_page,
+)
 from jobos.resume import ResumeImporter
 
 
@@ -98,6 +105,36 @@ class CompanyShortlist:
     @property
     def exhausted(self) -> bool:
         return self.slots_left <= 0
+
+
+@dataclass(slots=True)
+class DailyPreparation:
+    """One job whose tailored resume package is ready for review at apply time."""
+
+    job: JobView
+    application_id: int
+    output_dir: str
+    score_before: int
+    score_after: int
+
+
+@dataclass(slots=True)
+class DailyRunResult:
+    """Everything one morning run did, ready to be printed as an action list."""
+
+    crawl: CrawlSummary | None = None
+    analysed: int = 0
+    shortlists: list[CompanyShortlist] = field(default_factory=list)
+    prepared: list[DailyPreparation] = field(default_factory=list)
+    already_prepared: list[DailyPreparation] = field(default_factory=list)
+    analysis_errors: dict[int, str] = field(default_factory=dict)
+    preparation_errors: dict[int, str] = field(default_factory=dict)
+
+    @property
+    def ready(self) -> list[DailyPreparation]:
+        """Newly prepared plus previously prepared, best match first."""
+        combined = self.prepared + self.already_prepared
+        return sorted(combined, key=lambda item: -item.score_after)
 
 
 class JobOSService:
@@ -199,6 +236,7 @@ class JobOSService:
         max_years: float | None = None,
         min_years: float | None = None,
         seniority: str = "",
+        since_hours: float | None = None,
         sort: str = "newest",
         limit: int = 200,
         offset: int = 0,
@@ -227,12 +265,16 @@ class JobOSService:
             or apply_preferences
         )
         db_limit = limit if not needs_python_filter else 5_000
+        since = (
+            utc_now() - timedelta(hours=since_hours) if since_hours and since_hours > 0 else None
+        )
         jobs = self.database.list_jobs(
             search=search,
             company=company,
             location=location,
             status=status,
             minimum_score=minimum_score,
+            since=since,
             sort=sort,
             limit=db_limit,
             offset=offset,
@@ -320,6 +362,7 @@ class JobOSService:
         search: str = "",
         location: str = "",
         quota: int | None = None,
+        since_hours: float | None = None,
         include_exhausted: bool = False,
     ) -> list[CompanyShortlist]:
         """Rank relevant roles per company, capped by each company's remaining quota.
@@ -334,6 +377,7 @@ class JobOSService:
         relevant = self.search_jobs(
             search=search,
             location=location,
+            since_hours=since_hours,
             sort="score",
             limit=5_000,
             apply_preferences=True,
@@ -376,6 +420,90 @@ class JobOSService:
         # Strongest opportunity first, then most relevant roles available.
         shortlists.sort(key=lambda item: (-item.best_score, -item.relevant, item.company))
         return shortlists
+
+    async def run_daily(
+        self,
+        *,
+        search: str = "",
+        location: str = "",
+        since_hours: float | None = None,
+        quota: int | None = None,
+        top: int = 10,
+        analyse_limit: int = 40,
+        do_crawl: bool = True,
+    ) -> DailyRunResult:
+        """One morning run: crawl, score what is new, then prepare the best packages.
+
+        Everything up to the human review is automated, and it stops there: JobOS
+        never submits an application. Work is idempotent, so a job whose package was
+        already generated is reported rather than optimised again.
+        """
+        # Fail before any slow work if there is nothing to tailor from.
+        self.require_master_resume()
+        result = DailyRunResult()
+        if do_crawl:
+            result.crawl = await self.crawl()
+
+        # Score the relevant-but-unanalysed roles so the ranking below is meaningful.
+        candidates = self.search_jobs(
+            search=search,
+            location=location,
+            since_hours=since_hours,
+            sort="newest",
+            limit=5_000,
+            apply_preferences=True,
+        )
+        unanalysed = [job.id for job in candidates if job.analysis is None][:analyse_limit]
+        if unanalysed:
+            batch = await self.analyse_jobs(unanalysed)
+            result.analysed = batch.analysed
+            result.analysis_errors = batch.errors
+
+        result.shortlists = self.company_shortlists(
+            search=search,
+            location=location,
+            quota=quota,
+            since_hours=since_hours,
+        )
+        # Per-company quota is already applied, so taking the strongest picks overall
+        # spreads the day's effort across employers instead of exhausting one.
+        picks = [job for shortlist in result.shortlists for job in shortlist.picks]
+        picks.sort(key=lambda job: -(job.match_score or 0))
+
+        for job in picks[: max(top, 0)]:
+            existing = self._existing_package(job)
+            if existing is not None:
+                result.already_prepared.append(existing)
+                continue
+            try:
+                outcome = await self.optimise_job(job.id)
+                approved, package = await self.approve_application(outcome.application.id)
+            except (ServiceError, LookupError, AIError, RenderError) as exc:
+                result.preparation_errors[job.id] = str(exc)
+                continue
+            result.prepared.append(
+                DailyPreparation(
+                    job=job,
+                    application_id=approved.id,
+                    output_dir=str(package.directory),
+                    score_before=approved.ats_before.overall_score,
+                    score_after=approved.ats_after.overall_score,
+                )
+            )
+        return result
+
+    def _existing_package(self, job: JobView) -> DailyPreparation | None:
+        """Return an already generated package for this job, so work is not repeated."""
+        for application in self.database.list_applications(job_id=job.id):
+            if application.status is ApplicationStatus.APPROVED and application.output_dir:
+                return DailyPreparation(
+                    job=job,
+                    application_id=application.id,
+                    output_dir=application.output_dir,
+                    score_before=application.ats_before.overall_score,
+                    score_after=application.ats_after.overall_score,
+                )
+        return None
 
     def companies_with_jobs(self) -> list[str]:
         return self.database.companies()
