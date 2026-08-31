@@ -9,6 +9,7 @@ import json
 import re
 import socket
 from collections.abc import Iterable
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 from urllib.robotparser import RobotFileParser
@@ -203,6 +204,7 @@ def parse_json_ld_jobs(html: str, company: str, source_url: str) -> list[JobData
                         source_url=source_url,
                         external_id=_as_text(item.get("identifier")),
                         employment_type=_as_text(item.get("employmentType")),
+                        posted_at=_as_datetime(item.get("datePosted")),
                     )
                 )
             except ValueError:
@@ -401,6 +403,9 @@ class CareerCrawler:
                     apply_url=apply_url,
                     source_url=company.url,
                     external_id=_as_text(item.get("id")),
+                    posted_at=_as_datetime(
+                        item.get("first_published") or item.get("updated_at")
+                    ),
                 )
             )
         return jobs
@@ -438,6 +443,7 @@ class CareerCrawler:
                     source_url=company.url,
                     external_id=_as_text(item.get("id")),
                     employment_type=_as_text(categories.get("commitment")),
+                    posted_at=_as_datetime(item.get("createdAt")),
                 )
             )
         return jobs
@@ -465,6 +471,7 @@ class CareerCrawler:
                     source_url=company.url,
                     external_id=_as_text(item.get("id")),
                     employment_type=_as_text(item.get("employmentType")),
+                    posted_at=_as_datetime(item.get("publishedAt")),
                 )
             )
         return jobs
@@ -522,6 +529,9 @@ class CareerCrawler:
                     source_url=company.url,
                     external_id=job_id,
                     employment_type=_as_text(detail.get("typeOfEmployment")),
+                    posted_at=_as_datetime(
+                        detail.get("releasedDate") or item.get("releasedDate")
+                    ),
                 )
             )
         return jobs
@@ -578,6 +588,8 @@ class CareerCrawler:
                         source_url=company.url,
                         external_id=_as_text(info.get("jobReqId")) or external_path,
                         employment_type=_as_text(info.get("timeType")),
+                        # `postedOn` is prose ("Posted Yesterday"); startDate is a date.
+                        posted_at=_as_datetime(info.get("startDate")),
                     )
                 )
                 if len(jobs) >= self.config.crawler.per_company_limit:
@@ -842,6 +854,33 @@ class CareerCrawler:
             address = ipaddress.ip_address(result[4][0])
             if not address.is_global:
                 raise CrawlError(f"private or local network target is not allowed: {parsed.hostname}")
+
+
+def _as_datetime(value: Any) -> datetime | None:
+    """Parse a board's publish date into an aware datetime, or None if unusable.
+
+    Boards disagree on format: ISO 8601 with or without a zone (Greenhouse, Ashby,
+    SmartRecruiters), epoch milliseconds (Lever), and plain calendar dates (Workday
+    `startDate`). A naive value is assumed UTC, which is at worst hours out and only
+    matters at the edge of a "posted in the last N days" window.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        # Lever reports milliseconds; treat anything that large as such.
+        seconds = float(value) / 1000 if abs(value) > 1e11 else float(value)
+        try:
+            return datetime.fromtimestamp(seconds, tz=UTC)
+        except (OverflowError, OSError, ValueError):
+            return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 def _extract_experience_text(description: str) -> str:

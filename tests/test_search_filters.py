@@ -518,3 +518,59 @@ def test_prune_keeps_jobs_with_an_application(
     removed = service.prune_jobs(older_than_days=30, commit=True)
     assert removed == 0
     assert service.database.get_job(protected) is not None
+
+
+def _seed_posted(service: JobOSService, *, fp: str, days_ago: float | None) -> int:
+    """Seed a job posted `days_ago` days back, or with no posting date at all."""
+    from datetime import timedelta
+
+    from jobos.models import utc_now
+
+    posted = None if days_ago is None else utc_now() - timedelta(days=days_ago)
+    job_data = JobData(
+        company="Acme",
+        title="Backend Engineer",
+        location="Bengaluru, India",
+        description="Python and FastAPI services.",
+        apply_url=f"https://boards.greenhouse.io/acme/jobs/{fp}",
+        source_url="https://boards.greenhouse.io/acme",
+        external_id=fp,
+        posted_at=posted,
+    )
+    view, _ = service.database.upsert_job(job_data, fingerprint=fp)
+    return view.id
+
+
+def test_posted_days_uses_the_employer_date(service: JobOSService) -> None:
+    """`posted_days` filters on the board's publish date, not when JobOS saw the job."""
+    fresh = _seed_posted(service, fp="fresh", days_ago=2)
+    stale = _seed_posted(service, fp="stale", days_ago=40)
+
+    ids = {job.id for job in service.search_jobs(posted_days=5)}
+    assert fresh in ids
+    assert stale not in ids
+    # Everything is still reachable without the filter, even though all rows were
+    # first seen just now.
+    assert {fresh, stale} <= {job.id for job in service.search_jobs()}
+
+
+def test_posted_days_excludes_jobs_without_a_date(service: JobOSService) -> None:
+    """A board that reports no date is skipped rather than assumed fresh."""
+    dated = _seed_posted(service, fp="dated", days_ago=1)
+    undated = _seed_posted(service, fp="undated", days_ago=None)
+
+    ids = {job.id for job in service.search_jobs(posted_days=7)}
+    assert dated in ids
+    assert undated not in ids
+
+
+def test_posted_at_round_trips_through_the_database(service: JobOSService) -> None:
+    """The stored date survives a read back, so the UI can show a real age."""
+    job_id = _seed_posted(service, fp="rt", days_ago=3)
+    stored = service.database.get_job(job_id)
+    assert stored is not None
+    assert stored.posted_at is not None
+    from jobos.models import utc_now
+
+    age_days = (utc_now() - stored.posted_at).total_seconds() / 86_400
+    assert 2.9 < age_days < 3.1

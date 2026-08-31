@@ -275,3 +275,56 @@ async def test_ad_hoc_crawl_never_closes_existing_jobs(
         )
     assert summary.jobs_closed == 0
     assert len(database.list_jobs()) == 2
+
+
+def test_as_datetime_handles_every_board_format() -> None:
+    """Each adapter reports its publish date differently; all must parse."""
+    from datetime import UTC, datetime
+
+    from jobos.crawler import _as_datetime
+
+    # Greenhouse / Ashby / SmartRecruiters: ISO 8601, with an offset or a Z.
+    # 10:28 at UTC-4 is 14:28 UTC.
+    assert _as_datetime("2026-07-15T10:28:32-04:00") == datetime(
+        2026, 7, 15, 14, 28, 32, tzinfo=UTC
+    )
+    assert _as_datetime("2026-08-21T11:45:11.299Z") == datetime(
+        2026, 8, 21, 11, 45, 11, 299_000, tzinfo=UTC
+    )
+    # Workday: a plain calendar date, assumed UTC.
+    workday = _as_datetime("2026-08-30")
+    assert workday is not None and workday.tzinfo is not None
+    # Lever: epoch milliseconds.
+    lever = _as_datetime(1782901087094)
+    assert lever is not None and lever.year == 2026
+    # Junk and blanks are dropped rather than guessed at.
+    assert _as_datetime(None) is None
+    assert _as_datetime("") is None
+    assert _as_datetime("Posted Yesterday") is None
+    assert _as_datetime(True) is None
+
+
+async def test_greenhouse_captures_the_published_date(
+    config: AppConfig, database: Database
+) -> None:
+    """A crawl records the employer's publish date so `posted_days` can use it."""
+    payload = {
+        "jobs": [
+            {
+                "id": 7,
+                "title": "Backend Engineer",
+                "location": {"name": "Bengaluru, India"},
+                "absolute_url": "https://boards.greenhouse.io/acme/jobs/7",
+                "content": "&lt;p&gt;Python. 4+ years.&lt;/p&gt;",
+                "first_published": "2026-08-20T10:00:00+00:00",
+                "updated_at": "2026-08-28T10:00:00+00:00",
+            }
+        ]
+    }
+    async with httpx.AsyncClient(transport=_greenhouse_transport(payload)) as client:
+        crawler = CareerCrawler(config, database, client=client, allow_private_networks=True)
+        await crawler.crawl("acme")
+    stored = database.list_jobs()[0]
+    assert stored.posted_at is not None
+    # first_published wins over updated_at: an edit is not a repost.
+    assert stored.posted_at.day == 20

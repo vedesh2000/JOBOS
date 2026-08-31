@@ -16,6 +16,7 @@ bound to loopback. AI is optional; every AI step has a deterministic fallback.
 - [Install](#install)
 - [Quick start](#quick-start)
 - [The daily workflow](#the-daily-workflow)
+- [Scheduling](#scheduling)
 - [Your resume as YAML](#your-resume-as-yaml)
 - [Configuration](#configuration)
 - [Command reference](#command-reference)
@@ -83,7 +84,7 @@ and tells you what needs attention.
 One command does everything up to your review:
 
 ```bash
-uv run jobos daily --location India
+uv run jobos daily --posted-days 5 --top 8
 ```
 
 It will:
@@ -94,6 +95,25 @@ It will:
 4. generate tailored packages for the strongest picks (10 by default),
 5. print an action list with the package path and `apply` command for each.
 
+### Fresh roles: `--posted-days` vs `--since-hours`
+
+These answer different questions, and the difference matters when you apply daily.
+
+| Flag | Means | Use it to |
+| --- | --- | --- |
+| `--posted-days 5` | the **employer** published it in the last 5 days | apply while a posting is still warm |
+| `--since-hours 24` | **JobOS** first saw it in the last 24 hours | see what today's crawl turned up |
+
+`--posted-days` reads the board's own publish date (`first_published` on Greenhouse,
+`createdAt` on Lever, `publishedAt` on Ashby, `releasedDate` on SmartRecruiters,
+`startDate` on Workday). Boards that do not report a date are **excluded** by the
+filter rather than assumed fresh, so it means "known to be posted since". A posting's
+age is shown in the dashboard's Posted column, with anything inside five days
+highlighted.
+
+The date is recorded at crawl time, so roles stored before this existed show `unknown`
+until their board is crawled again.
+
 Then, for each package you like:
 
 ```bash
@@ -103,6 +123,47 @@ uv run jobos status <job_id> applied # records it, consuming that company's quot
 ```
 
 Marking jobs `applied` matters: it is what keeps the per-company quota honest.
+
+### A repeatable 20-minute routine
+
+The goal is to spend your time choosing and applying, not waiting. So the slow parts
+(crawling, scoring, PDF rendering) run before you sit down, and your session is only
+review-and-submit.
+
+**Once, in the background** — schedule the crawl and scoring so it is done before you
+start (see [Scheduling](#scheduling)):
+
+```bash
+uv run jobos daily --posted-days 5 --top 8 --json > ~/.jobos-daily.log
+```
+
+**Then, your 20 minutes:**
+
+1. `uv run jobos serve` and open the dashboard. It already shows only roles matching
+   your preferences, so there is nothing to filter.
+2. Set **Posted within** to *Last 5 days* and **Sort** by *Match score*. The top of that
+   list is your day's work.
+3. For each of the top few: open the role, read the posting, and if it fits, click
+   **Optimise**. Review the diff — the rejected edits are the truth guard working, not
+   errors — then **Approve and generate**.
+4. The tailored PDF appears inline on the review page. Read it. If a line reads badly,
+   `jobos export <app_id>` gives you editable YAML and `jobos render` re-renders it.
+5. Click **Apply** to open the employer's form, submit it yourself, then mark the job
+   **applied**. That last step is what stops the per-company quota being spent twice.
+
+**Aim for volume through consistency, not batching.** Three or four well-tailored
+applications a day beats twenty generic ones on a Sunday, and the quota
+(`max_applications_per_company`, default 3) is there to stop you burning a good
+employer on weak fits.
+
+**When you spot a company you want to track**, add it and move on:
+
+```bash
+uv run jobos add-company https://boards.greenhouse.io/thatcompany --crawl
+```
+
+or use **Add a company permanently** in the dashboard. It joins tomorrow's run
+automatically.
 
 Useful flags:
 
@@ -122,6 +183,48 @@ regenerated, so running it twice costs nothing.
 > date, because boards rarely expose a reliable one. After your first run, "new to
 > JobOS" is effectively "new to you". On a first run, or a day with few new postings,
 > `--since-hours 24` can legitimately return nothing; drop it to use your full set.
+
+---
+
+## Scheduling
+
+The point of scheduling is that the waiting happens while you sleep. A full crawl of
+~100 boards takes around 20 minutes and scoring is a few seconds per role, so running
+it at 6am means the dashboard is ready when you are.
+
+On macOS, save this as `~/Library/LaunchAgents/com.jobos.daily.plist`, with the paths
+adjusted:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.jobos.daily</string>
+  <key>WorkingDirectory</key><string>/Users/you/JobOS</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/you/JobOS/.venv/bin/jobos</string>
+    <string>daily</string>
+    <string>--posted-days</string><string>5</string>
+    <string>--top</string><string>8</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
+  <key>StandardOutPath</key><string>/Users/you/JobOS/.jobos/daily.log</string>
+  <key>StandardErrorPath</key><string>/Users/you/JobOS/.jobos/daily.err</string>
+</dict>
+</plist>
+```
+
+Then `launchctl load ~/Library/LaunchAgents/com.jobos.daily.plist`. Check
+`.jobos/daily.log` after the first run.
+
+Two notes. A laptop that is asleep at 6am will run the job when it wakes, not skip it.
+And if a 20-minute crawl is more than you want daily, split it: crawl the fast boards
+(Greenhouse, Lever, Ashby) every morning and set the Workday and SmartRecruiters
+entries to `enabled: false` except on a weekly pass.
 
 ---
 

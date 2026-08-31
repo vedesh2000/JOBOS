@@ -122,6 +122,7 @@ main { max-width: 1180px; margin: 0 auto; padding: 22px 20px 60px; }
   color: var(--muted);
 }
 .markdown-body hr { border: 0; border-top: 1px solid var(--border); margin: 26px 0; }
+.fresh { color: var(--good); font-weight: 600; }
 .add-company summary { cursor: pointer; font-weight: 600; }
 .add-company summary:hover { color: var(--accent); }
 .pdf-preview {

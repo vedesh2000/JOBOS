@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -77,6 +77,7 @@ class JobRecord(Base):
     source_url: Mapped[str] = mapped_column(String(4_000))
     external_id: Mapped[str] = mapped_column(String(300), default="", index=True)
     employment_type: Mapped[str] = mapped_column(String(200), default="")
+    posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     fingerprint: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     status: Mapped[str] = mapped_column(String(30), default=JobStatus.NEW.value, index=True)
     match_score: Mapped[int | None] = mapped_column(Integer, index=True)
@@ -144,6 +145,24 @@ class Database:
 
     def initialize(self) -> None:
         Base.metadata.create_all(self.engine)
+        self._add_missing_columns()
+
+    def _add_missing_columns(self) -> None:
+        """Add columns introduced after a database was first created.
+
+        ``create_all`` only creates missing tables, so a new column on an existing
+        install would otherwise raise OperationalError on every query. Columns are
+        added as nullable with no default, which SQLite can do without rewriting the
+        table, so an existing row simply reads NULL until its next crawl.
+        """
+        added: dict[str, str] = {"posted_at": "DATETIME"}
+        with self.engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+            existing = {
+                row[1] for row in conn.exec_driver_sql("PRAGMA table_info(jobs)").fetchall()
+            }
+            for column, sql_type in added.items():
+                if column not in existing:
+                    conn.exec_driver_sql(f"ALTER TABLE jobs ADD COLUMN {column} {sql_type}")
 
     @contextmanager
     def session(self) -> Iterator[Session]:
@@ -269,15 +288,22 @@ class Database:
         status: JobStatus | None = None,
         minimum_score: int | None = None,
         since: datetime | None = None,
+        posted_after: datetime | None = None,
         sort: str = "newest",
         limit: int = 1_000,
         offset: int = 0,
     ) -> list[JobView]:
         query: Select[tuple[JobRecord]] = select(JobRecord).where(JobRecord.is_active.is_(True))
         if since is not None:
-            # `first_seen_at` is when JobOS first saw the posting, which is the best
-            # available proxy for "new to me" without a reliable employer post date.
+            # `first_seen_at` is when JobOS first saw the posting: "new to me".
             query = query.where(JobRecord.first_seen_at >= since)
+        if posted_after is not None:
+            # The employer's own publish date. Postings from boards that do not report
+            # one are excluded rather than guessed at, so this filter means exactly
+            # "known to be posted since"; use `since` for "new to JobOS".
+            query = query.where(JobRecord.posted_at.is_not(None)).where(
+                JobRecord.posted_at >= posted_after
+            )
         if search:
             pattern = f"%{search}%"
             query = query.where(
@@ -417,6 +443,17 @@ class Database:
             record.status = status.value
 
     @staticmethod
+    def _as_utc(value: datetime | None) -> datetime | None:
+        """SQLite has no timezone type, so stored aware datetimes read back naive.
+
+        Everything is written as UTC, so the zone is reattached here and callers can
+        compare against an aware ``utc_now()`` without special-casing.
+        """
+        if value is None:
+            return None
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
+
+    @staticmethod
     def _job_view(record: JobRecord) -> JobView:
         analysis = (
             JobAnalysis.model_validate(record.analysis_json) if record.analysis_json else None
@@ -433,6 +470,7 @@ class Database:
             source_url=record.source_url,
             external_id=record.external_id,
             employment_type=record.employment_type,
+            posted_at=Database._as_utc(record.posted_at),
             status=JobStatus(record.status),
             match_score=record.match_score,
             analysis=analysis,

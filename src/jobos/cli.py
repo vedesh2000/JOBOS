@@ -439,6 +439,13 @@ def search(
             help="Drop jobs mentioning this skill; repeat to exclude several.",
         ),
     ] = None,
+    posted_days: Annotated[
+        float | None,
+        typer.Option(
+            help="Only roles the employer posted within this many days. Skips boards "
+            "that do not publish a date."
+        ),
+    ] = None,
     sort: Annotated[str, typer.Option(help="newest, oldest, score, company, title.")] = "newest",
     limit: Annotated[int, typer.Option(help="Maximum rows.")] = 50,
     preferred: Annotated[
@@ -462,6 +469,7 @@ def search(
         seniority=seniority,
         skills_include=skill,
         skills_exclude=exclude_skill,
+        posted_days=posted_days,
         sort=sort,
         limit=limit,
         apply_preferences=preferred,
@@ -483,6 +491,10 @@ def report(
         int | None,
         typer.Option(help="Applications allowed per company. Defaults to config."),
     ] = None,
+    posted_days: Annotated[
+        float | None,
+        typer.Option(help="Only roles posted within this many days, per the employer's board."),
+    ] = None,
     show_all: Annotated[
         bool,
         typer.Option("--show-all", help="Include companies whose quota is already used up."),
@@ -500,6 +512,7 @@ def report(
         search=query,
         location=location,
         quota=quota,
+        posted_days=posted_days,
         include_exhausted=show_all,
     )
     if json_output:
@@ -564,6 +577,13 @@ def daily(
         float | None,
         typer.Option(help="Only consider roles first seen in the last N hours, e.g. 24."),
     ] = None,
+    posted_days: Annotated[
+        float | None,
+        typer.Option(
+            help="Only roles the employer posted within this many days, e.g. 5. Uses the "
+            "board's own publish date, so it skips boards that do not report one."
+        ),
+    ] = None,
     top: Annotated[int, typer.Option(help="How many tailored packages to prepare.")] = 10,
     quota: Annotated[
         int | None, typer.Option(help="Applications allowed per company. Defaults to config.")
@@ -588,6 +608,7 @@ def daily(
             search=query,
             location=location,
             since_hours=since_hours,
+            posted_days=posted_days,
             quota=quota,
             top=top,
             analyse_limit=analyse_limit,
@@ -696,6 +717,10 @@ def analyse_all(
     location: Annotated[str, typer.Option(help="Location substring, e.g. India.")] = "",
     status: Annotated[str | None, typer.Option(help="new, saved, opened, applied, ignored.")] = None,
     limit: Annotated[int, typer.Option(help="Maximum jobs to analyse.")] = 25,
+    posted_days: Annotated[
+        float | None,
+        typer.Option(help="Only analyse roles posted within this many days."),
+    ] = None,
     preferred: Annotated[
         bool,
         typer.Option(
@@ -721,6 +746,7 @@ def analyse_all(
         company=company,
         location=location,
         status=JobStatus(status) if status else None,
+        posted_days=posted_days,
         limit=limit,
         apply_preferences=preferred,
     )

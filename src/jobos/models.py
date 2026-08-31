@@ -204,6 +204,10 @@ class JobData(StrictModel):
     source_url: str = Field(max_length=4_000)
     external_id: str = Field(default="", max_length=300)
     employment_type: str = Field(default="", max_length=200)
+    # When the employer published the posting, when the board reports it. This is the
+    # real thing to filter "posted this week" on; `first_seen_at` is only when JobOS
+    # noticed it. None where a board does not expose a date.
+    posted_at: datetime | None = None
 
     @field_validator("apply_url", "source_url")
     @classmethod

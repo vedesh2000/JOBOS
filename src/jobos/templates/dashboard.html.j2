@@ -120,6 +120,14 @@
     <label class="field">Max years
       <input type="number" name="max_years" min="0" max="60" value="{{ query.max_years }}">
     </label>
+    <label class="field" title="Uses the employer's own publish date. Boards that do not report one are skipped.">Posted within
+      <select name="posted_days">
+        <option value="">Any time</option>
+        {% for value, label in [('1', 'Last 24 hours'), ('3', 'Last 3 days'), ('5', 'Last 5 days'), ('7', 'Last week'), ('14', 'Last 2 weeks'), ('30', 'Last 30 days')] %}
+        <option value="{{ value }}" {{ 'selected' if query.posted_days == value }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
     <label class="field">Sort
       <select name="sort">
         {% for value, label in sorts %}
@@ -145,6 +153,7 @@
           <th>Company</th>
           <th>Role</th>
           <th>Location</th>
+          <th class="nowrap">Posted</th>
           <th class="nowrap">Match</th>
           <th>Status</th>
           <th class="nowrap">Actions</th>
@@ -156,6 +165,13 @@
           <td>{{ job.company }}</td>
           <td><a href="/jobs/{{ job.id }}">{{ job.title }}</a></td>
           <td>{{ job.location or '—' }}</td>
+          <td class="nowrap">
+            {% if job.posted_at %}
+            <span class="{{ 'fresh' if job.posted_at | posted_age_days <= 5 }}">{{ job.posted_at | posted_age }}</span>
+            {% else %}
+            <span class="subtle" title="This board does not publish a date.">unknown</span>
+            {% endif %}
+          </td>
           <td class="nowrap">
             {% if job.match_score is none %}
             <span class="subtle">not scored</span>

@@ -298,6 +298,7 @@ class JobOSService:
         skills_include: list[str] | None = None,
         skills_exclude: list[str] | None = None,
         since_hours: float | None = None,
+        posted_days: float | None = None,
         sort: str = "newest",
         limit: int = 200,
         offset: int = 0,
@@ -338,6 +339,9 @@ class JobOSService:
         since = (
             utc_now() - timedelta(hours=since_hours) if since_hours and since_hours > 0 else None
         )
+        posted_after = (
+            utc_now() - timedelta(days=posted_days) if posted_days and posted_days > 0 else None
+        )
         # An explicit `location` is already a narrower request, so the preferred list
         # only applies when the caller did not name a place. It is pushed into SQL
         # because `list_jobs` caps how many rows it returns, and on a corpus this size
@@ -353,6 +357,7 @@ class JobOSService:
             status=status,
             minimum_score=minimum_score,
             since=since,
+            posted_after=posted_after,
             sort=sort,
             limit=db_limit,
             offset=offset,
@@ -492,6 +497,7 @@ class JobOSService:
         location: str = "",
         quota: int | None = None,
         since_hours: float | None = None,
+        posted_days: float | None = None,
         include_exhausted: bool = False,
     ) -> list[CompanyShortlist]:
         """Rank relevant roles per company, capped by each company's remaining quota.
@@ -507,6 +513,7 @@ class JobOSService:
             search=search,
             location=location,
             since_hours=since_hours,
+            posted_days=posted_days,
             sort="score",
             limit=5_000,
             apply_preferences=True,
@@ -556,6 +563,7 @@ class JobOSService:
         search: str = "",
         location: str = "",
         since_hours: float | None = None,
+        posted_days: float | None = None,
         quota: int | None = None,
         top: int = 10,
         analyse_limit: int = 40,
@@ -578,6 +586,7 @@ class JobOSService:
             search=search,
             location=location,
             since_hours=since_hours,
+            posted_days=posted_days,
             sort="newest",
             limit=5_000,
             apply_preferences=True,
@@ -593,6 +602,7 @@ class JobOSService:
             location=location,
             quota=quota,
             since_hours=since_hours,
+            posted_days=posted_days,
         )
         # Per-company quota is already applied, so taking the strongest picks overall
         # spreads the day's effort across employers instead of exhausting one.

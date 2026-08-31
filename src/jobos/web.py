@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
 from urllib.parse import urlsplit
@@ -47,6 +48,30 @@ SORT_OPTIONS = [
 ]
 
 
+def posted_age_days(value: datetime | None) -> float:
+    """Age of a posting in days; a large number when unknown, so it never reads fresh."""
+    if value is None:
+        return 10_000.0
+    moment = value if value.tzinfo else value.replace(tzinfo=UTC)
+    return max((datetime.now(UTC) - moment).total_seconds() / 86_400, 0.0)
+
+
+def posted_age(value: datetime | None) -> str:
+    """Human-readable posting age, e.g. "today", "3d ago", "5w ago"."""
+    if value is None:
+        return "unknown"
+    days = posted_age_days(value)
+    if days < 1:
+        return "today"
+    if days < 2:
+        return "yesterday"
+    if days < 14:
+        return f"{int(days)}d ago"
+    if days < 60:
+        return f"{int(days / 7)}w ago"
+    return f"{int(days / 30)}mo ago"
+
+
 def score_band(score: int | None) -> str:
     """Map a score to a CSS class. Bands are presentation guidance only."""
     if score is None:
@@ -75,6 +100,8 @@ def create_app(config: AppConfig | None = None, service: JobOSService | None = N
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     templates = Jinja2Templates(directory=TEMPLATE_DIR)
     templates.env.filters["score_band"] = score_band
+    templates.env.filters["posted_age"] = posted_age
+    templates.env.filters["posted_age_days"] = posted_age_days
     app.state.templates = templates
 
     def get_service(request: Request) -> JobOSService:
@@ -127,6 +154,7 @@ def create_app(config: AppConfig | None = None, service: JobOSService | None = N
         max_years: str = "",
         skills: str = "",
         exclude_skills: str = "",
+        posted_days: str = "",
         preferred: str = "",
         sort: str = "newest",
     ) -> Response:
@@ -149,6 +177,7 @@ def create_app(config: AppConfig | None = None, service: JobOSService | None = N
             max_years=_as_float(max_years),
             skills_include=_csv_terms(skills),
             skills_exclude=_csv_terms(exclude_skills),
+            posted_days=_as_float(posted_days),
             sort=sort if sort in dict(SORT_OPTIONS) else "newest",
             apply_preferences=apply_preferences,
         )
@@ -177,6 +206,7 @@ def create_app(config: AppConfig | None = None, service: JobOSService | None = N
                     "max_years": max_years,
                     "skills": skills,
                     "exclude_skills": exclude_skills,
+                    "posted_days": posted_days,
                     "preferred": apply_preferences,
                     "sort": sort,
                 },
@@ -631,6 +661,7 @@ def _empty_dashboard(service: JobOSService, error: str) -> dict[str, Any]:
             "max_years": "",
             "skills": "",
             "exclude_skills": "",
+            "posted_days": "",
             "preferred": True,
             "sort": "newest",
         },
