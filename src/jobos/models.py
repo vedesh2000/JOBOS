@@ -210,6 +210,18 @@ class JobData(StrictModel):
     def validate_urls(cls, value: str) -> str:
         return validate_web_url(value)
 
+    @field_validator("location", "employment_type", mode="before")
+    @classmethod
+    def truncate_long_text(cls, value: Any) -> Any:
+        """Trim over-long values instead of rejecting the whole posting.
+
+        Some boards concatenate every office into one location string, which would
+        otherwise fail validation and drop an entire company's jobs.
+        """
+        if isinstance(value, str) and len(value) > 300:
+            return value[:297].rstrip() + "..."
+        return value
+
     @field_validator("skills")
     @classmethod
     def deduplicate_skills(cls, values: list[str]) -> list[str]:
