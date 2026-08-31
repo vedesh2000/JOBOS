@@ -77,6 +77,10 @@ class PreferenceSettings(StrictModel):
     max_years: float | None = Field(default=None, ge=0, le=60)
     # Optional exact seniority match for analysed jobs. Empty = any.
     seniority: str = Field(default="", max_length=100)
+    # Many employers cap how many roles one candidate may apply to. The per-company
+    # report uses this to show only that many best-fit slots, so the quota is spent
+    # on the strongest matches instead of the first ones seen.
+    max_applications_per_company: int = Field(default=3, ge=1, le=50)
 
 
 class CompanySettings(StrictModel):

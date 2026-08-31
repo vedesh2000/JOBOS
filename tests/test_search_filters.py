@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from jobos.models import JobAnalysis, JobData
+from jobos.models import JobAnalysis, JobData, JobStatus
 from jobos.services import JobOSService
 
 
@@ -112,3 +112,75 @@ def test_preferences_filter_titles_and_keep_unanalysed(service: JobOSService) ->
     assert unanalysed.id in ids  # unanalysed engineer kept (lenient years)
     assert mgr not in ids  # excluded by "manager"
     assert staff_over not in ids  # analysed and over the 8-year window
+
+
+def _seed_scored(
+    service: JobOSService, title: str, *, company: str, fp: str, score: int
+) -> int:
+    job_data = JobData(
+        company=company,
+        title=title,
+        location="Bengaluru, India",
+        description="Backend role. Required: Python.",
+        apply_url=f"https://boards.greenhouse.io/x/jobs/{fp}",
+        source_url="https://boards.greenhouse.io/x",
+        external_id=fp,
+    )
+    view, _ = service.database.upsert_job(job_data, fingerprint=fp)
+    service.database.save_job_analysis(view.id, JobAnalysis(minimum_years=5.0, seniority=""))
+    service.database.set_job_score(view.id, score)
+    return view.id
+
+
+def test_company_shortlist_respects_quota_and_ranks_by_score(service: JobOSService) -> None:
+    service.config.preferences.minimum_match_score = 0
+    service.config.preferences.max_applications_per_company = 2
+
+    best = _seed_scored(service, "Backend Engineer", company="Acme", fp="a1", score=90)
+    second = _seed_scored(service, "Software Engineer II", company="Acme", fp="a2", score=80)
+    third = _seed_scored(service, "Platform Engineer", company="Acme", fp="a3", score=70)
+    other = _seed_scored(service, "Backend Engineer", company="Zeta", fp="z1", score=85)
+
+    shortlists = service.company_shortlists()
+    by_company = {item.company: item for item in shortlists}
+
+    acme = by_company["Acme"]
+    assert [job.id for job in acme.picks] == [best, second], "highest scores fill the quota"
+    assert acme.slots_left == 2
+    assert acme.relevant == 3
+    assert acme.overflow == 1, "the third role is beyond quota"
+    assert third not in {job.id for job in acme.picks}
+
+    # Companies are ordered by their strongest opportunity.
+    assert [item.company for item in shortlists] == ["Acme", "Zeta"]
+    assert [job.id for job in by_company["Zeta"].picks] == [other]
+
+
+def test_applied_roles_consume_company_quota(service: JobOSService) -> None:
+    service.config.preferences.minimum_match_score = 0
+    service.config.preferences.max_applications_per_company = 2
+
+    applied = _seed_scored(service, "Backend Engineer", company="Acme", fp="b1", score=90)
+    remaining = _seed_scored(service, "Software Engineer II", company="Acme", fp="b2", score=80)
+    _seed_scored(service, "Platform Engineer", company="Acme", fp="b3", score=70)
+    service.set_job_status(applied, JobStatus.APPLIED)
+
+    acme = next(item for item in service.company_shortlists() if item.company == "Acme")
+    assert acme.applied == 1
+    assert acme.slots_left == 1, "one slot consumed by the applied role"
+    assert [job.id for job in acme.picks] == [remaining]
+    assert applied not in {job.id for job in acme.picks}
+
+
+def test_exhausted_companies_are_hidden_unless_requested(service: JobOSService) -> None:
+    service.config.preferences.minimum_match_score = 0
+    service.config.preferences.max_applications_per_company = 1
+
+    used = _seed_scored(service, "Backend Engineer", company="Acme", fp="c1", score=90)
+    _seed_scored(service, "Software Engineer II", company="Acme", fp="c2", score=80)
+    service.set_job_status(used, JobStatus.APPLIED)
+
+    assert all(item.company != "Acme" for item in service.company_shortlists())
+    with_exhausted = service.company_shortlists(include_exhausted=True)
+    acme = next(item for item in with_exhausted if item.company == "Acme")
+    assert acme.exhausted is True and acme.picks == []

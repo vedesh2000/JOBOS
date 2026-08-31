@@ -54,6 +54,9 @@ preferences:
   min_years:                     # lower bound of a job's required years (blank = none)
   max_years:                     # upper bound (blank = none)
   seniority: ""                  # exact seniority for analysed jobs (empty = any)
+  # `jobos report` recommends at most this many roles per company, so a limited
+  # application quota is spent on the strongest matches.
+  max_applications_per_company: 3
 
 # Only these companies are ever crawled. Uncomment or add your own.
 # Greenhouse, Lever, Ashby, SmartRecruiters, and Workday boards use their public

@@ -373,6 +373,87 @@ def search(
     console.print(_job_table(jobs, f"{len(jobs)} jobs"))
 
 
+@app.command()
+def report(
+    query: Annotated[str, typer.Argument(help="Optional free text to narrow roles.")] = "",
+    location: Annotated[str, typer.Option(help="Location substring, e.g. India.")] = "",
+    quota: Annotated[
+        int | None,
+        typer.Option(help="Applications allowed per company. Defaults to config."),
+    ] = None,
+    show_all: Annotated[
+        bool,
+        typer.Option("--show-all", help="Include companies whose quota is already used up."),
+    ] = False,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Per-company shortlist: the best-fit roles to spend each company's quota on.
+
+    Employers often cap how many roles one candidate may apply to, so this compares
+    relevance *within* each company and recommends only as many roles as you have
+    slots left. Roles already marked applied consume quota.
+    """
+    service = _service()
+    shortlists = service.company_shortlists(
+        search=query,
+        location=location,
+        quota=quota,
+        include_exhausted=show_all,
+    )
+    if json_output:
+        _emit(
+            [
+                {
+                    "company": item.company,
+                    "relevant": item.relevant,
+                    "applied": item.applied,
+                    "quota": item.quota,
+                    "slots_left": item.slots_left,
+                    "overflow": item.overflow,
+                    "picks": [job.model_dump(mode="json") for job in item.picks],
+                }
+                for item in shortlists
+            ]
+        )
+        return
+    if not shortlists:
+        console.print(
+            "[yellow]No companies to recommend.[/yellow] Run `jobos crawl`, then "
+            "`jobos analyse-all --location India` so roles can be ranked."
+        )
+        return
+    total_picks = sum(len(item.picks) for item in shortlists)
+    console.print(
+        f"[bold]{total_picks} recommended across {len(shortlists)} companies[/bold] "
+        f"(quota {shortlists[0].quota} per company)\n"
+    )
+    for item in shortlists:
+        header = (
+            f"[bold cyan]{item.company}[/bold cyan] — {item.relevant} relevant, "
+            f"{item.applied} applied, [green]{item.slots_left} slot(s) left[/green]"
+        )
+        if item.exhausted:
+            header += " [red](quota used)[/red]"
+        console.print(header)
+        if item.picks:
+            console.print(_job_table(item.picks, f"Best fit at {item.company}"))
+        if item.unscored:
+            console.print(
+                f"  [yellow]{item.unscored} of these are not analysed yet[/yellow] — "
+                "run `jobos analyse-all` for a reliable ranking."
+            )
+        if item.overflow:
+            console.print(
+                f"  {item.overflow} more relevant role(s) beyond the quota; "
+                "apply on demand if a pick falls through."
+            )
+        console.print("")
+    console.print(
+        "Next: [bold]jobos optimise <job_id>[/bold] for a pick, then "
+        "[bold]jobos diff[/bold], [bold]jobos generate[/bold], [bold]jobos apply[/bold]."
+    )
+
+
 @app.command("analyse")
 def analyse(
     job_id: Annotated[int, typer.Argument(help="Job ID from `jobos search`.")],

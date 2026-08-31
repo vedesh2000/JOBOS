@@ -73,6 +73,33 @@ class BatchAnalysisResult:
     errors: dict[int, str] = field(default_factory=dict)
 
 
+@dataclass(slots=True)
+class CompanyShortlist:
+    """The best-fit roles at one company, bounded by that company's application quota."""
+
+    company: str
+    relevant: int
+    """How many roles at this company pass the preference filter."""
+    applied: int
+    """How many have already been marked applied, consuming quota."""
+    quota: int
+    slots_left: int
+    picks: list[JobView] = field(default_factory=list)
+    """The strongest matches that fit the remaining quota."""
+    overflow: int = 0
+    """Relevant roles beyond the quota cut, available on demand."""
+    unscored: int = 0
+    """Picks still lacking a match score, so ranking is provisional until analysed."""
+
+    @property
+    def best_score(self) -> int:
+        return max((job.match_score or 0) for job in self.picks) if self.picks else 0
+
+    @property
+    def exhausted(self) -> bool:
+        return self.slots_left <= 0
+
+
 class JobOSService:
     """Wire the pieces together. Plain constructor injection, no framework."""
 
@@ -286,6 +313,69 @@ class JobOSService:
                 continue
             result.append(job)
         return result
+
+    def company_shortlists(
+        self,
+        *,
+        search: str = "",
+        location: str = "",
+        quota: int | None = None,
+        include_exhausted: bool = False,
+    ) -> list[CompanyShortlist]:
+        """Rank relevant roles per company, capped by each company's remaining quota.
+
+        Applying to every opening at one employer burns a limited quota on weak fits,
+        so relevance is compared *within* each company and only the strongest roles
+        that fit the remaining slots are put forward. Jobs already marked applied
+        consume quota.
+        """
+        prefs = self.config.preferences
+        effective_quota = quota if quota is not None else prefs.max_applications_per_company
+        relevant = self.search_jobs(
+            search=search,
+            location=location,
+            sort="score",
+            limit=5_000,
+            apply_preferences=True,
+        )
+        # Applied roles consume quota even when they no longer pass the filter.
+        applied_counts: dict[str, int] = {}
+        for job in self.database.list_jobs(status=JobStatus.APPLIED, limit=5_000):
+            applied_counts[job.company] = applied_counts.get(job.company, 0) + 1
+
+        grouped: dict[str, list[JobView]] = {}
+        for job in relevant:
+            grouped.setdefault(job.company, []).append(job)
+
+        shortlists: list[CompanyShortlist] = []
+        for company, jobs in grouped.items():
+            # Highest score first; unscored jobs rank last so analysed matches lead.
+            ranked = sorted(
+                jobs,
+                key=lambda job: (job.match_score is None, -(job.match_score or 0), job.title),
+            )
+            # Already-applied roles should not occupy a recommendation slot.
+            candidates = [job for job in ranked if job.status is not JobStatus.APPLIED]
+            applied = applied_counts.get(company, 0)
+            slots_left = max(effective_quota - applied, 0)
+            picks = candidates[:slots_left]
+            shortlists.append(
+                CompanyShortlist(
+                    company=company,
+                    relevant=len(candidates),
+                    applied=applied,
+                    quota=effective_quota,
+                    slots_left=slots_left,
+                    picks=picks,
+                    overflow=max(len(candidates) - len(picks), 0),
+                    unscored=sum(1 for job in picks if job.match_score is None),
+                )
+            )
+        if not include_exhausted:
+            shortlists = [item for item in shortlists if item.picks]
+        # Strongest opportunity first, then most relevant roles available.
+        shortlists.sort(key=lambda item: (-item.best_score, -item.relevant, item.company))
+        return shortlists
 
     def companies_with_jobs(self) -> list[str]:
         return self.database.companies()
