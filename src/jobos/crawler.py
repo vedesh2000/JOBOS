@@ -264,7 +264,15 @@ class CareerCrawler:
         self._robots: dict[str, RobotFileParser | None] = {}
         self._cache: dict[str, str] = {}
 
-    async def crawl(self, company_slug: str | None = None) -> CrawlSummary:
+    async def crawl(
+        self, company_slug: str | None = None, *, summary: CrawlSummary | None = None
+    ) -> CrawlSummary:
+        """Crawl configured companies, filling ``summary`` as each one finishes.
+
+        Passing a ``summary`` lets a caller watch a long crawl progress: counts are
+        updated per company rather than all at the end, which is what the dashboard
+        spinner polls.
+        """
         selected = {
             slug: company
             for slug, company in self.config.companies.items()
@@ -272,13 +280,16 @@ class CareerCrawler:
         }
         if company_slug and company_slug not in self.config.companies:
             raise CrawlError(f"company {company_slug!r} is not configured")
-        summary = CrawlSummary(companies_requested=len(selected))
+        result = summary if summary is not None else CrawlSummary()
+        result.companies_requested = len(selected)
         if not selected:
-            return summary
-        await self._crawl_with_client(selected, summary, close_missing=True)
-        return summary
+            return result
+        await self._crawl_with_client(selected, result, close_missing=True)
+        return result
 
-    async def crawl_settings(self, company: CompanySettings) -> CrawlSummary:
+    async def crawl_settings(
+        self, company: CompanySettings, *, summary: CrawlSummary | None = None
+    ) -> CrawlSummary:
         """Crawl a single ad-hoc source that is not in config, e.g. a pasted URL.
 
         Dispatch is identical to a configured crawl (an ATS host uses its adapter, any
@@ -286,11 +297,12 @@ class CareerCrawler:
         Unlike a configured crawl this never closes previously stored jobs: an ad-hoc,
         possibly partial fetch should only add or refresh, never retire earlier ones.
         """
-        summary = CrawlSummary(companies_requested=1)
+        result = summary if summary is not None else CrawlSummary()
+        result.companies_requested = 1
         await self._crawl_with_client(
-            {f"url:{canonical_url(company.url)}": company}, summary, close_missing=False
+            {f"url:{canonical_url(company.url)}": company}, result, close_missing=False
         )
-        return summary
+        return result
 
     async def _crawl_with_client(
         self,
@@ -323,45 +335,54 @@ class CareerCrawler:
     ) -> None:
         company_limit = asyncio.Semaphore(min(self.config.crawler.concurrency, 5))
 
-        async def run(slug: str, company: CompanySettings) -> tuple[str, list[JobData] | Exception]:
+        async def run(slug: str, company: CompanySettings) -> None:
             async with company_limit:
                 try:
-                    return slug, await self._crawl_company(company)
+                    jobs = await self._crawl_company(company)
                 except Exception as exc:
-                    return slug, exc
+                    summary.errors[slug] = str(exc)
+                    return
+            # Stored as soon as this company finishes rather than after every company,
+            # so a long crawl reports progress, and stopping it half way keeps whatever
+            # already completed. The write is synchronous, so concurrent companies
+            # cannot interleave inside it.
+            self._persist_company(company, jobs, summary, close_missing=close_missing)
 
-        results = await asyncio.gather(
-            *(run(slug, company) for slug, company in selected.items())
-        )
-        for slug, result in results:
-            if isinstance(result, Exception):
-                summary.errors[slug] = str(result)
+        await asyncio.gather(*(run(slug, company) for slug, company in selected.items()))
+
+    def _persist_company(
+        self,
+        company: CompanySettings,
+        jobs: list[JobData],
+        summary: CrawlSummary,
+        *,
+        close_missing: bool,
+    ) -> None:
+        summary.companies_succeeded += 1
+        limit = self.config.crawler.per_company_limit
+        seen: set[str] = set()
+        fingerprints: set[str] = set()
+        for job in jobs[:limit]:
+            fingerprint = job_fingerprint(job)
+            key = f"{canonical_url(job.apply_url)}:{fingerprint}"
+            if key in seen:
                 continue
-            summary.companies_succeeded += 1
-            limit = self.config.crawler.per_company_limit
-            seen: set[str] = set()
-            fingerprints: set[str] = set()
-            for job in result[:limit]:
-                fingerprint = job_fingerprint(job)
-                key = f"{canonical_url(job.apply_url)}:{fingerprint}"
-                if key in seen:
-                    continue
-                seen.add(key)
-                fingerprints.add(fingerprint)
-                _, created = self.database.upsert_job(job, fingerprint)
-                summary.jobs_seen += 1
-                if created:
-                    summary.jobs_added += 1
-                else:
-                    summary.jobs_updated += 1
-            # A board that filled the limit was almost certainly cut short, and the
-            # postings past the cut were never seen, so closing them would be wrong.
-            # Only a board read in full can tell us what it no longer lists. Ad-hoc
-            # URL crawls opt out entirely (close_missing=False).
-            if close_missing and len(result) < limit:
-                summary.jobs_closed += self.database.deactivate_missing_jobs(
-                    selected[slug].name, fingerprints
-                )
+            seen.add(key)
+            fingerprints.add(fingerprint)
+            _, created = self.database.upsert_job(job, fingerprint)
+            summary.jobs_seen += 1
+            if created:
+                summary.jobs_added += 1
+            else:
+                summary.jobs_updated += 1
+        # A board that filled the limit was almost certainly cut short, and the
+        # postings past the cut were never seen, so closing them would be wrong.
+        # Only a board read in full can tell us what it no longer lists. Ad-hoc
+        # URL crawls opt out entirely (close_missing=False).
+        if close_missing and len(jobs) < limit:
+            summary.jobs_closed += self.database.deactivate_missing_jobs(
+                company.name, fingerprints
+            )
 
     async def _crawl_company(self, company: CompanySettings) -> list[JobData]:
         await self._validate_public_url(company.url)

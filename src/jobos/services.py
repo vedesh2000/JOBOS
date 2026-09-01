@@ -195,15 +195,19 @@ class JobOSService:
 
     # ----- jobs ---------------------------------------------------------
 
-    async def crawl(self, company: str | None = None) -> CrawlSummary:
+    async def crawl(
+        self, company: str | None = None, *, summary: CrawlSummary | None = None
+    ) -> CrawlSummary:
         if not self.config.companies:
             raise ServiceError(
                 "No companies configured. Add entries under `companies:` in config.yaml."
             )
         crawler = CareerCrawler(self.config, self.database)
-        return await crawler.crawl(company)
+        return await crawler.crawl(company, summary=summary)
 
-    async def crawl_url(self, url: str, name: str | None = None) -> CrawlSummary:
+    async def crawl_url(
+        self, url: str, name: str | None = None, *, summary: CrawlSummary | None = None
+    ) -> CrawlSummary:
         """Crawl a single career page or board URL that is not in config.
 
         Uses the same adapters as a configured crawl (Greenhouse/Lever/Ashby/etc. by
@@ -216,7 +220,7 @@ class JobOSService:
             name=(name or "").strip() or derive_company_name(clean), url=clean
         )
         crawler = CareerCrawler(self.config, self.database)
-        return await crawler.crawl_settings(settings)
+        return await crawler.crawl_settings(settings, summary=summary)
 
     def add_company(self, url: str, name: str | None = None) -> str:
         """Persist a company under `companies:` in config.yaml and load it immediately.
@@ -254,7 +258,8 @@ class JobOSService:
                 "No companies configured. Add entries under `companies:` in config.yaml."
             )
         label = company or f"{len(self.config.companies)} configured companies"
-        self._launch_background_crawl(self.crawl(company), label)
+        live = CrawlSummary()
+        self._launch_background_crawl(self.crawl(company, summary=live), label, live)
 
     async def start_background_url_crawl(self, url: str, name: str | None = None) -> None:
         """Kick off an ad-hoc crawl of a pasted URL for the web UI, without blocking."""
@@ -262,15 +267,20 @@ class JobOSService:
             raise ServiceError("A crawl is already running.")
         clean = self._validate_crawl_url(url)
         label = (name or "").strip() or derive_company_name(clean)
-        self._launch_background_crawl(self.crawl_url(clean, name), label)
+        live = CrawlSummary()
+        self._launch_background_crawl(self.crawl_url(clean, name, summary=live), label, live)
 
     def _launch_background_crawl(
-        self, work: Coroutine[Any, Any, CrawlSummary], label: str
+        self, work: Coroutine[Any, Any, CrawlSummary], label: str, live: CrawlSummary
     ) -> None:
+        # The live summary is published straight away and mutated as each company
+        # finishes, so polling `/api/crawl` shows progress instead of nothing until
+        # the whole run completes.
         self.crawl_progress = CrawlProgress(
             running=True,
             label=label,
             started_at=utc_now().isoformat(timespec="seconds"),
+            summary=live,
         )
         self._crawl_task = asyncio.create_task(self._run_background_crawl(work))
 

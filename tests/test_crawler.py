@@ -328,3 +328,55 @@ async def test_greenhouse_captures_the_published_date(
     assert stored.posted_at is not None
     # first_published wins over updated_at: an edit is not a repost.
     assert stored.posted_at.day == 20
+
+
+async def test_each_company_is_stored_as_it_finishes(
+    config: AppConfig, database: Database
+) -> None:
+    """A slow board must not hold back rows from one that already finished.
+
+    Previously every company was fetched before anything was written, so a long crawl
+    showed no progress and an interruption lost all of it.
+    """
+    from jobos.config import CompanySettings
+
+    config.companies = {
+        "fast": CompanySettings(name="Fast", url="https://boards.greenhouse.io/fast"),
+        "slow": CompanySettings(name="Slow", url="https://boards.greenhouse.io/slow"),
+    }
+    # One company at a time, so "fast" is fully handled before "slow" is requested.
+    config.crawler.concurrency = 1
+    rows_when_slow_ran: list[int] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if "/slow/" in str(request.url):
+            rows_when_slow_ran.append(len(database.list_jobs()))
+            return httpx.Response(200, json={"jobs": [_role(2, "Slow Engineer")]})
+        return httpx.Response(200, json={"jobs": [_role(1, "Fast Engineer")]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        crawler = CareerCrawler(config, database, client=client, allow_private_networks=True)
+        summary = await crawler.crawl()
+
+    # The heart of it: the first board's rows were already committed while the second
+    # was still being fetched. Under the old batch-at-the-end write this was 0.
+    assert rows_when_slow_ran == [1]
+    assert summary.companies_succeeded == 2
+    assert len(database.list_jobs()) == 2
+
+
+async def test_a_supplied_summary_is_filled_in_place(
+    config: AppConfig, database: Database
+) -> None:
+    """The dashboard polls this object while the crawl runs, so it must be the same one."""
+    from jobos.models import CrawlSummary
+
+    live = CrawlSummary()
+    payload = {"jobs": [_role(1, "Backend Engineer")]}
+    async with httpx.AsyncClient(transport=_greenhouse_transport(payload)) as client:
+        crawler = CareerCrawler(config, database, client=client, allow_private_networks=True)
+        returned = await crawler.crawl("acme", summary=live)
+
+    assert returned is live
+    assert live.companies_requested == 1
+    assert live.jobs_added == 1

@@ -48,6 +48,21 @@
       return '<span class="spinner" aria-hidden="true"></span> ' + text;
     }
 
+    // Counts grow as each company is stored, so a long crawl shows real movement
+    // rather than an indefinite "this can take a minute".
+    function progressText(status) {
+      var s = status.summary;
+      if (!s || !s.companies_requested) {
+        return "starting…";
+      }
+      var done = (s.companies_succeeded || 0) + Object.keys(s.errors || {}).length;
+      var text = done + " of " + s.companies_requested + " boards";
+      if (s.jobs_seen) {
+        text += ", " + s.jobs_seen + " roles";
+      }
+      return text;
+    }
+
     function poll() {
       fetch(statusUrl, { headers: { Accept: "application/json" } })
         .then(function (response) {
@@ -55,7 +70,7 @@
         })
         .then(function (status) {
           if (status.running) {
-            flash("info", spinner("Crawling " + escapeHtml(status.label) + "… this can take a minute."));
+            flash("info", spinner("Crawling " + escapeHtml(status.label) + "… " + progressText(status)));
             window.setTimeout(poll, 2000);
             return;
           }
