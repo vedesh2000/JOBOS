@@ -13,9 +13,12 @@ output/
 playwright-report/
 
 # User-local configuration; commit config.example.yaml instead.
-config.yaml
+# Ignore every config*.yaml (config.yaml, config-backup.yaml, etc.) but keep the
+# public template.
+config*.yaml
+!config.example.yaml
 
 # Personal resume data and rendered output — never commit real PII.
-*.resume.yaml
+resume.yaml
 *.resume.json
 final/

@@ -1,57 +1,107 @@
 {% extends "base.html.j2" %}
 {% block title %}Jobs — JobOS{% endblock %}
 {% block content %}
+{% if not has_resume %}
+<div class="flash info">
+  Browse and crawl jobs freely. To <b>score</b> a job against you and <b>tailor</b> a
+  resume for it, <a href="/resume">add your master resume</a> — it takes a minute.
+</div>
+{% endif %}
 <div class="page-head">
   <div>
     <h1>Jobs</h1>
     <p class="subtle">{{ total }} matching {{ 'job' if total == 1 else 'jobs' }} stored locally.</p>
   </div>
   <div class="spacer"></div>
-  <form method="post" action="/crawl" class="actions" id="crawl-form">
-    <select name="company" aria-label="Company to crawl">
-      <option value="">All configured companies</option>
-      {% for slug, company in configured.items() %}
-      <option value="{{ slug }}">{{ company.name }}</option>
-      {% endfor %}
-    </select>
-    <input type="url" name="url" class="url-input" inputmode="url"
-           placeholder="…or paste any careers URL" aria-label="Career page URL to crawl">
-    <button type="submit" class="btn primary" {% if crawl.running %}disabled{% endif %}>
-      Crawl
-    </button>
-  </form>
 </div>
-<p class="subtle crawl-hint">
-  Pick a configured company, or paste any careers page or job-board URL to crawl it
-  once. Greenhouse, Lever, Ashby, SmartRecruiters and Workday links work best; other
-  sites are read where the page exposes its postings.
-</p>
+
+<div class="card crawl-panel">
+  <div class="crawl-panel-head">
+    <h2>Fetch jobs</h2>
+    <p class="subtle">
+      Crawling reads the current openings from your companies' job boards into this
+      local list — it never submits anything. Pick what to crawl, or paste one URL.
+    </p>
+  </div>
+  <form method="post" action="/crawl" class="crawl-fields" id="crawl-form">
+    <label class="field">Company
+      <select name="company" aria-label="Company to crawl">
+        <option value="">All configured companies</option>
+        {% for slug, company in configured.items() %}
+        <option value="{{ slug }}">{{ company.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field" title="Crawl only one speed tier at a time. Fast finishes in a minute; slow (Workday) is the long tail.">Speed wave
+      <select name="ats" aria-label="Crawl speed wave">
+        {% for value, label in waves %}
+        <option value="{{ value }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field grow">Or paste a careers URL
+      <input type="url" name="url" class="url-input" inputmode="url"
+             placeholder="https://boards.greenhouse.io/acme" aria-label="Career page URL to crawl">
+    </label>
+    <div class="crawl-actions">
+      <button type="submit" class="btn primary" {% if crawl.running %}disabled{% endif %}>
+        Crawl
+      </button>
+      <button type="button" id="crawl-waves-btn" class="btn"
+              title="Crawl fast boards first (apply right away), then medium and slow behind you"
+              {% if crawl.running %}disabled{% endif %}>
+        Crawl all in waves
+      </button>
+    </div>
+  </form>
+  <p class="subtle crawl-hint" style="margin:12px 0 0">
+    <b>Crawl</b> fetches the selected company (or wave) now. <b>Crawl all in waves</b>
+    runs fast → medium → slow in order, so you can start applying to the fast results
+    while the slower Workday boards keep loading — you'll get a notification as each
+    wave finishes. Re-crawls only update what changed. Manage boards on
+    <a href="/organizations">Organizations</a>.
+  {% if closed_jobs %}
+  <form method="post" action="/jobs/clear-closed" class="inline"
+        data-confirm="Permanently delete {{ closed_jobs }} closed job(s)? Jobs tied to a prepared application or report are kept."
+        style="display:inline">
+    · <button type="submit" class="btn small">Delete {{ closed_jobs }} closed job{{ '' if closed_jobs == 1 else 's' }}</button>
+  </form>
+  {% endif %}
+  </p>
+</div>
 
 <details class="card add-company">
-  <summary>Add a company permanently</summary>
+  <summary>Paste a job description</summary>
   <p class="subtle">
-    Saves it under <code>companies:</code> in <code>{{ config_path }}</code>, so every
-    future crawl includes it. A one-off URL crawl above is not saved.
+    For roles on career portals the crawler can't read (custom sites, LinkedIn, etc.),
+    paste the job description here to analyse, score, and optimise against it. The URL is
+    optional — add it so "Apply" opens the right page.
   </p>
-  <form method="post" action="/companies" class="actions" data-busy="Adding...">
-    <label class="field">Careers URL
-      <input type="url" name="url" required class="url-input"
-             placeholder="https://boards.greenhouse.io/acme">
+  <form method="post" action="/jobs/paste" data-busy="Adding job...">
+    <div class="actions">
+      <label class="field">Job title
+        <input type="text" name="title" required placeholder="AI Engineer">
+      </label>
+      <label class="field">Company
+        <input type="text" name="company" required placeholder="NetApp">
+      </label>
+      <label class="field">Apply URL <span class="subtle">(optional)</span>
+        <input type="url" name="url" class="url-input" placeholder="https://jobs.netapp.com/…">
+      </label>
+    </div>
+    <label class="field" style="display:block;margin-top:8px">Job description
+      <textarea name="description" required rows="8" spellcheck="false"
+                style="width:100%;font-family:inherit;font-size:13px;line-height:1.4"
+                placeholder="Paste the full job description here…"></textarea>
     </label>
-    <label class="field">Name <span class="subtle">(optional)</span>
-      <input type="text" name="name" placeholder="Derived from the URL">
-    </label>
-    <label class="field check">
-      <input type="checkbox" name="crawl" value="1" checked> Crawl it now
-    </label>
-    <button type="submit" class="btn primary">Add company</button>
+    <button type="submit" class="btn primary" style="margin-top:8px">Add &amp; analyse</button>
   </form>
 </details>
 
 {% if not configured %}
 <div class="flash warn">
-  No companies configured yet. Add them under <code>companies:</code> in
-  <code>{{ config_path }}</code>, then crawl.
+  No companies configured yet. Add them under <code>companies:</code> in your
+  <code>config.yaml</code>, then crawl.
 </div>
 {% endif %}
 
@@ -78,7 +128,10 @@
 </div>
 
 <div class="stats">
-  <div class="stat"><b>{{ total }}</b><span>Shown</span></div>
+  <div class="stat">
+    <b>{{ jobs | length }}{% if page and page.total > (jobs | length) %} <span class="subtle">of {{ page.total }}</span>{% endif %}</b>
+    <span>Shown</span>
+  </div>
   <div class="stat"><b>{{ scored }}</b><span>Scored</span></div>
   <div class="stat"><b>{{ companies | length }}</b><span>Companies</span></div>
   <div class="stat"><b>{{ min_score }}</b><span>Min score</span></div>
@@ -120,6 +173,13 @@
     <label class="field">Max years
       <input type="number" name="max_years" min="0" max="60" value="{{ query.max_years }}">
     </label>
+    <label class="field" title="When JobOS first saw the posting — your daily 'what's new' filter.">New within
+      <select name="new_within">
+        {% for value, label in new_within_options %}
+        <option value="{{ value }}" {{ 'selected' if query.new_within == value }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
     <label class="field" title="Uses the employer's own publish date. Boards that do not report one are skipped.">Posted within
       <select name="posted_days">
         <option value="">Any time</option>
@@ -154,6 +214,7 @@
           <th>Role</th>
           <th>Location</th>
           <th class="nowrap">Posted</th>
+          <th class="nowrap">Years</th>
           <th class="nowrap">Match</th>
           <th>Status</th>
           <th class="nowrap">Actions</th>
@@ -173,6 +234,13 @@
             {% endif %}
           </td>
           <td class="nowrap">
+            {% if job.min_years is not none %}
+            <span class="yrs" title="Minimum years of experience the posting asks for">{{ job.min_years | int }}+ yrs</span>
+            {% else %}
+            <span class="subtle" title="Not stated in the posting.">—</span>
+            {% endif %}
+          </td>
+          <td class="nowrap">
             {% if job.match_score is none %}
             <span class="subtle">not scored</span>
             {% else %}
@@ -180,7 +248,19 @@
             <div class="bar"><i style="width: {{ job.match_score }}%"></i></div>
             {% endif %}
           </td>
-          <td><span class="badge">{{ job.status.value }}</span></td>
+          <td class="nowrap">
+            {# Inline status: change it right here during triage, no need to open the job. #}
+            <form method="post" action="/jobs/{{ job.id }}/status" class="inline status-form">
+              <input type="hidden" name="next" value="/?{{ query_string }}">
+              <select name="status" class="status-select status-{{ job.status.value }}"
+                      aria-label="Status for {{ job.title }}">
+                {% for value in statuses %}
+                <option value="{{ value }}" {{ 'selected' if job.status.value == value }}>{{ value }}</option>
+                {% endfor %}
+              </select>
+              <noscript><button type="submit" class="btn small">Set</button></noscript>
+            </form>
+          </td>
           <td class="nowrap">
             <div class="actions">
               <a class="btn small" href="/jobs/{{ job.id }}">Open</a>
@@ -194,6 +274,37 @@
       </tbody>
     </table>
   </div>
+  {% if page and page.page_count > 1 %}
+  {# Carry the active filters across page links so paging never resets them. #}
+  {% set base = "?q=" ~ (query.q | urlencode)
+      ~ "&company=" ~ (query.company | urlencode)
+      ~ "&location=" ~ (query.location | urlencode)
+      ~ "&status=" ~ (query.status | urlencode)
+      ~ "&min_score=" ~ (query.min_score | urlencode)
+      ~ "&max_years=" ~ (query.max_years | urlencode)
+      ~ "&skills=" ~ (query.skills | urlencode)
+      ~ "&exclude_skills=" ~ (query.exclude_skills | urlencode)
+      ~ "&posted_days=" ~ (query.posted_days | urlencode)
+      ~ "&new_within=" ~ (query.new_within | urlencode)
+      ~ "&sort=" ~ (query.sort | urlencode)
+      ~ ("&preferred=on" if preferred else "") %}
+  <nav class="pager" aria-label="Job results pages">
+    {% if page.has_prev %}
+    <a class="btn small" href="{{ base }}&page={{ page.page_number - 1 }}">← Previous</a>
+    {% else %}
+    <span class="btn small disabled" aria-disabled="true">← Previous</span>
+    {% endif %}
+    <span class="subtle">
+      Showing {{ page.showing_from }}–{{ page.showing_to }} of {{ page.total }}
+      (page {{ page.page_number }} of {{ page.page_count }})
+    </span>
+    {% if page.has_next %}
+    <a class="btn small" href="{{ base }}&page={{ page.page_number + 1 }}">Next →</a>
+    {% else %}
+    <span class="btn small disabled" aria-disabled="true">Next →</span>
+    {% endif %}
+  </nav>
+  {% endif %}
   {% else %}
   <p class="empty">
     No jobs match these filters.

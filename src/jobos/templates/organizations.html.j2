@@ -1,0 +1,159 @@
+{% extends "base.html.j2" %}
+{% block title %}Organizations — JobOS{% endblock %}
+{% block content %}
+<h1>Organizations</h1>
+<p class="subtle">
+  Everything here edits your <code>config.yaml</code>. Friendly forms edit one section at a
+  time and keep every comment; the Advanced tab is the full raw YAML. Each save is validated
+  and a timestamped backup is kept.
+</p>
+
+<div class="subtabs" style="display:flex;gap:8px;margin:12px 0;border-bottom:1px solid var(--border,#2a2a2a)">
+  <a href="/organizations?tab=companies" class="btn small {{ 'primary' if active_tab == 'companies' }}">Companies</a>
+  <a href="/organizations?tab=preferences" class="btn small {{ 'primary' if active_tab == 'preferences' }}">Preferences</a>
+  <a href="/organizations?tab=advanced" class="btn small {{ 'primary' if active_tab == 'advanced' }}">Advanced (raw YAML)</a>
+</div>
+
+{# ===================== COMPANIES ===================== #}
+{% if active_tab == 'companies' %}
+<div class="card">
+  <h2>Add a company permanently</h2>
+  <p class="subtle">
+    Saves it under <code>companies:</code> so every future crawl includes it.
+  </p>
+  <form method="post" action="/companies" class="actions" data-busy="Adding...">
+    <label class="field">Careers URL
+      <input type="url" name="url" required class="url-input"
+             placeholder="https://boards.greenhouse.io/acme">
+    </label>
+    <label class="field">Name <span class="subtle">(optional)</span>
+      <input type="text" name="name" placeholder="Derived from the URL">
+    </label>
+    <label class="field check">
+      <input type="checkbox" name="crawl" value="1"> Crawl it now
+    </label>
+    <button type="submit" class="btn primary">Add company</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Configured boards ({{ companies | length }})</h2>
+  {% if companies %}
+  {% if gcc_count %}
+  <p class="subtle" style="margin:0 0 8px">
+    <span class="badge gcc-badge">GCC</span> {{ gcc_count }} of these are Global
+    Capability Centres (banks, retailers, pharma, industrial multinationals).
+  </p>
+  {% endif %}
+  <div class="board-search">
+    <input type="search" id="board-filter" autocomplete="off"
+           placeholder="Filter boards by name, key, category, or URL…" aria-label="Filter configured boards">
+    <span class="subtle" id="board-filter-count">{{ companies | length }} boards</span>
+  </div>
+  <div class="table-wrap">
+    <table id="board-table">
+      <thead><tr><th>Key</th><th>Name</th><th>Category</th><th>India</th><th>Board URL</th></tr></thead>
+      <tbody>
+        {% for company in companies %}
+        <tr data-search="{{ (company.slug ~ ' ' ~ company.name ~ ' ' ~ company.category ~ ' ' ~ (' gcc' if company.is_gcc else '') ~ ' ' ~ company.url) | lower }}">
+          <td><code>{{ company.slug }}</code></td>
+          <td>
+            {{ company.name }}
+            {% if company.is_gcc %}<span class="badge gcc-badge" title="Global Capability Centre">GCC</span>{% endif %}
+          </td>
+          <td>
+            {% if company.category and company.category != 'unknown' %}
+            <span class="badge cat-badge">{{ company.category.replace('_', ' ') }}</span>
+            {% else %}<span class="subtle">—</span>{% endif %}
+          </td>
+          <td class="nowrap">{% if company.india_roles is not none %}{{ company.india_roles }}{% else %}<span class="subtle">—</span>{% endif %}</td>
+          <td><a href="{{ company.url }}" target="_blank" rel="noopener">{{ company.url }}</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="subtle" style="margin-top:8px">
+    To edit annotations, reorder, or remove a board, use the Advanced tab (raw YAML).
+  </p>
+  {% else %}
+  <p class="empty">No companies configured yet. Add one above.</p>
+  {% endif %}
+</div>
+
+{# ===================== PREFERENCES ===================== #}
+{% elif active_tab == 'preferences' %}
+<form method="post" action="/organizations/preferences" data-busy="Saving...">
+  <div class="card">
+    <h2>Matching preferences</h2>
+    <p class="subtle">
+      These drive the "Preferred only" job view and the daily shortlist. Comma-separate lists.
+    </p>
+    <div class="grid two">
+      <div>
+        <label class="subtle" for="preferred_locations">Preferred locations</label>
+        <input type="text" id="preferred_locations" name="preferred_locations"
+               value="{{ preferences.preferred_locations }}">
+        <label class="subtle" for="roles_include" style="margin-top:10px">Roles include</label>
+        <input type="text" id="roles_include" name="roles_include" value="{{ preferences.roles_include }}">
+        <label class="subtle" for="roles_exclude" style="margin-top:10px">Roles exclude</label>
+        <input type="text" id="roles_exclude" name="roles_exclude" value="{{ preferences.roles_exclude }}">
+        <label class="subtle" for="skills_include" style="margin-top:10px">Skills include (any-of)</label>
+        <input type="text" id="skills_include" name="skills_include" value="{{ preferences.skills_include }}">
+        <label class="subtle" for="skills_exclude" style="margin-top:10px">Skills exclude</label>
+        <input type="text" id="skills_exclude" name="skills_exclude" value="{{ preferences.skills_exclude }}">
+      </div>
+      <div>
+        <label class="subtle" for="minimum_match_score">Minimum match score</label>
+        <input type="number" min="0" max="100" id="minimum_match_score" name="minimum_match_score"
+               value="{{ preferences.minimum_match_score }}">
+        <label class="subtle" for="min_years" style="margin-top:10px">Min years</label>
+        <input type="number" step="0.5" min="0" id="min_years" name="min_years" value="{{ preferences.min_years }}">
+        <label class="subtle" for="max_years" style="margin-top:10px">Max years</label>
+        <input type="number" step="0.5" min="0" id="max_years" name="max_years" value="{{ preferences.max_years }}">
+        <label class="subtle" for="seniority" style="margin-top:10px">Seniority (optional)</label>
+        <input type="text" id="seniority" name="seniority" value="{{ preferences.seniority }}" placeholder="e.g. Senior">
+        <label class="subtle" for="max_applications_per_company" style="margin-top:10px">Max applications per company</label>
+        <input type="number" min="1" id="max_applications_per_company" name="max_applications_per_company"
+               value="{{ preferences.max_applications_per_company }}">
+        <label style="display:block;margin-top:10px">
+          <input type="checkbox" name="remote_only" {{ 'checked' if preferences.remote_only }}>
+          Remote only
+        </label>
+      </div>
+    </div>
+    <div class="actions" style="margin-top:12px">
+      <button type="submit" class="btn primary">Save preferences</button>
+    </div>
+  </div>
+</form>
+
+{# ===================== ADVANCED (RAW YAML) ===================== #}
+{% else %}
+<div class="card">
+  <div class="page-head">
+    <div>
+      <h2 style="margin-top:0">Edit config.yaml</h2>
+      <p class="subtle">
+        The full file, including the companies annotations. A bad edit is rejected with the
+        error shown and never written, so the app cannot be left with a broken config.
+      </p>
+    </div>
+    <div class="spacer"></div>
+    <div class="actions">
+      <button type="submit" class="btn small primary" form="config-edit-form">Validate &amp; save</button>
+    </div>
+  </div>
+  <form method="post" action="/organizations/config" id="config-edit-form" data-busy="Validating and saving...">
+    <textarea id="config_text" name="config_text" spellcheck="false"
+              style="width:100%;min-height:460px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.45;white-space:pre;overflow:auto;">{{ config_text }}</textarea>
+  </form>
+  {% if backup_count %}
+  <p class="subtle" style="margin-top:10px">
+    {{ backup_count }} backup{{ '' if backup_count == 1 else 's' }} kept in
+    <code>.jobos/config_history/</code>. Latest: <code>{{ backups[0] }}</code>.
+  </p>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

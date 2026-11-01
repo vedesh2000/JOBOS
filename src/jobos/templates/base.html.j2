@@ -5,15 +5,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <title>{% block title %}JobOS{% endblock %}</title>
-<link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}">
-<script src="{{ url_for('static', path='/app.js') }}" defer></script>
+<link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}?v={{ asset_version }}">
+<script src="{{ url_for('static', path='/app.js') }}?v={{ asset_version }}" defer></script>
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="/">JobOS<span>local</span></a>
+  <a class="brand" href="/home">JobOS<span>local</span></a>
   <nav class="topnav">
     <a href="/" class="{{ 'active' if active == 'jobs' }}">Jobs</a>
+    <a href="/insights" class="{{ 'active' if active == 'insights' }}">Insights</a>
+    <a href="/coach" class="{{ 'active' if active == 'coach' }}">Coach</a>
     <a href="/resume" class="{{ 'active' if active == 'resume' }}">Resume</a>
+    <a href="/organizations" class="{{ 'active' if active == 'organizations' }}">Organizations</a>
+    <a href="/ai" class="{{ 'active' if active == 'ai' }}">AI</a>
     <a href="/history" class="{{ 'active' if active == 'history' }}">History</a>
     <a href="/doctor" class="{{ 'active' if active == 'doctor' }}">Doctor</a>
     <a href="/readme" class="{{ 'active' if active == 'readme' }}">Docs</a>

@@ -16,7 +16,7 @@ from rich.table import Table
 from jobos.ai import AIError
 from jobos.config import AppConfig, load_config
 from jobos.crawler import CrawlError
-from jobos.models import JobStatus, JobView
+from jobos.models import BoardValidation, JobStatus, JobView, ValidationSummary
 from jobos.renderer import (
     RenderError,
     ResumeRenderer,
@@ -270,6 +270,48 @@ def resume_show(json_output: Annotated[bool, typer.Option("--json")] = False) ->
     console.print(resume_to_markdown(master.resume))
 
 
+@resume_app.command("export")
+def resume_export(
+    path: Annotated[
+        Path, typer.Argument(help="Where to write the YAML, e.g. resume.yaml.")
+    ] = Path("resume.yaml"),
+    version_id: Annotated[
+        int | None,
+        typer.Option(help="Export a specific version id instead of the master."),
+    ] = None,
+    force: Annotated[
+        bool, typer.Option("--force", help="Overwrite the file if it already exists.")
+    ] = False,
+) -> None:
+    """Export your master resume (or a version) to an editable YAML file.
+
+    Round-trips with `jobos resume import`: export, edit (e.g. add skill_groups or
+    reword a bullet), then re-import. The stored copy in the database is unchanged
+    until you import the edited file.
+    """
+    service = _service()
+    if version_id is not None:
+        version = service.database.get_resume(version_id)
+        if version is None:
+            errors.print(f"[red]No resume version {version_id}.[/red]")
+            raise typer.Exit(1)
+        resume = version.resume
+    else:
+        resume = _guard(service.require_master_resume).resume
+    if path.exists() and not force:
+        errors.print(f"[red]{path} already exists.[/red] Pass --force to overwrite.")
+        raise typer.Exit(1)
+    try:
+        path.write_text(dump_structured_resume_yaml(resume), encoding="utf-8")
+    except OSError as exc:
+        errors.print(f"[red]Could not write {path}: {exc}[/red]")
+        raise typer.Exit(1) from exc
+    console.print(
+        f"[green]Exported[/green] to {path}. Edit it, then "
+        f"[bold]jobos resume import {path}[/bold] to update your master."
+    )
+
+
 @resume_app.command("versions")
 def resume_versions(json_output: Annotated[bool, typer.Option("--json")] = False) -> None:
     """List every stored resume version."""
@@ -296,6 +338,37 @@ def resume_versions(json_output: Annotated[bool, typer.Option("--json")] = False
 # ----- jobs ---------------------------------------------------------------
 
 
+_ATS_WAVES: dict[str, set[str]] = {
+    "fast": {"greenhouse", "lever", "ashby"},
+    "medium": {"smartrecruiters", "oracle"},
+    "slow": {"workday"},
+}
+_KNOWN_ATS = {"greenhouse", "lever", "ashby", "smartrecruiters", "oracle", "workday", "generic"}
+
+
+def _resolve_ats_wave(value: str) -> set[str] | None:
+    """Turn a --ats value into a set of ATS names, or None for 'all'.
+
+    Accepts a wave alias (fast/medium/slow) or a comma-separated list of ATS names.
+    Unknown names are rejected with a clear message rather than silently crawling
+    nothing.
+    """
+    value = value.strip().casefold()
+    if not value:
+        return None
+    if value in _ATS_WAVES:
+        return set(_ATS_WAVES[value])
+    names = {part.strip() for part in value.split(",") if part.strip()}
+    unknown = names - _KNOWN_ATS
+    if unknown:
+        errors.print(
+            f"[red]Unknown ATS {', '.join(sorted(unknown))}.[/red] "
+            f"Use a wave (fast/medium/slow) or any of: {', '.join(sorted(_KNOWN_ATS))}."
+        )
+        raise typer.Exit(1)
+    return names
+
+
 @app.command()
 def crawl(
     company: Annotated[
@@ -309,21 +382,36 @@ def crawl(
         str,
         typer.Option(help="Employer name for an ad-hoc URL crawl (derived from the URL if omitted)."),
     ] = "",
+    ats: Annotated[
+        str,
+        typer.Option(
+            help="Crawl only boards on these ATSs, as a speed 'wave'. A tier name "
+            "('fast' = greenhouse/lever/ashby, 'medium' = smartrecruiters/oracle, "
+            "'slow' = workday) or a comma-list of ATS names. Omit to crawl all.",
+        ),
+    ] = "",
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
-    """Crawl configured career pages, or any career-page URL, and store new jobs."""
+    """Crawl configured career pages, or any career-page URL, and store new jobs.
+
+    Use --ats to crawl in speed waves: `--ats fast` finishes in a minute or two
+    (single-request boards), while `--ats slow` runs the per-posting Workday boards
+    separately so a full refresh need not be one long blocking run.
+    """
     service = _service()
+    ats_types = _resolve_ats_wave(ats)
     target = (company or "").strip()
     if target.lower().startswith(("http://", "https://")):
         summary = _run(service.crawl_url(target, name or None))
     else:
-        summary = _run(service.crawl(company))
+        summary = _run(service.crawl(company, ats_types=ats_types))
     if json_output:
         _emit(summary.model_dump(mode="json"))
         raise typer.Exit(0 if not summary.errors else 1)
+    pruned = f", {summary.jobs_pruned} pruned" if summary.jobs_pruned else ""
     console.print(
         f"[green]{summary.jobs_added} added[/green], {summary.jobs_updated} updated, "
-        f"{summary.jobs_closed} closed, "
+        f"{summary.jobs_closed} closed{pruned}, "
         f"{summary.jobs_seen} seen across "
         f"{summary.companies_succeeded}/{summary.companies_requested} companies."
     )
@@ -331,6 +419,50 @@ def crawl(
         console.print(f"[red]{name}:[/red] {message}")
     if summary.errors:
         raise typer.Exit(1)
+
+
+@app.command("crawl-waves")
+def crawl_waves(
+    bell: Annotated[
+        bool,
+        typer.Option(
+            "--bell/--no-bell",
+            help="Ring the terminal bell when each wave finishes (portable, no deps).",
+        ),
+    ] = True,
+) -> None:
+    """Crawl every board in speed waves: fast, then medium, then slow.
+
+    The fast boards finish in a minute or two and their jobs are immediately
+    searchable, so you can start applying while the medium and slow (Workday) waves
+    keep crawling behind you. A banner prints as each wave completes.
+    """
+    service = _service()
+
+    def announce(result) -> None:  # type: ignore[no-untyped-def]
+        s = result.summary
+        if bell:
+            # ASCII bell — the one portable "ding", works in every terminal/OS.
+            console.file.write("\a")
+            console.file.flush()
+        console.print(
+            f"\n[green]✓ {result.wave.capitalize()} wave complete[/green] — "
+            f"[bold]{s.jobs_added}[/bold] new, {s.jobs_updated} updated across "
+            f"{s.companies_succeeded}/{s.companies_requested} of {result.boards} boards."
+        )
+        if result.wave == "fast":
+            console.print("  [bold]You can start applying now.[/bold] Later waves keep running.")
+        if s.errors:
+            console.print(f"  [yellow]{len(s.errors)} board(s) had errors.[/yellow]")
+
+    console.print("Crawling in waves: [bold]fast → medium → slow[/bold]. This runs to completion.")
+    results = _run(service.crawl_waves(on_wave_done=announce))
+    total_added = sum(r.summary.jobs_added for r in results)
+    console.print(
+        f"\n[green]All waves done.[/green] {total_added} new job(s) across "
+        f"{sum(r.boards for r in results)} boards. Open the dashboard or run "
+        "[bold]jobos report[/bold] to pick what to apply to."
+    )
 
 
 @app.command("add-company")
@@ -359,6 +491,294 @@ def add_company(
         )
         for company_name, message in summary.errors.items():
             console.print(f"[red]{company_name}:[/red] {message}")
+
+
+@app.command("validate-boards")
+def validate_boards(
+    file: Annotated[
+        Path | None,
+        typer.Option(
+            "--file",
+            help="YAML/text file of candidate boards (slug: url or one URL per line). "
+            "Defaults to the packaged discovery seed.",
+        ),
+    ] = None,
+    limit: Annotated[
+        int | None,
+        typer.Option(help="Validate at most this many candidates (after dedup)."),
+    ] = None,
+    adopt: Annotated[
+        bool,
+        typer.Option("--adopt", help="Write boards that pass into config.yaml."),
+    ] = False,
+    adopt_limit: Annotated[
+        int | None,
+        typer.Option(help="With --adopt, cap how many of the best boards are added."),
+    ] = None,
+    seed: Annotated[
+        str,
+        typer.Option(
+            help="Which packaged seed to use: 'main' (startups/SaaS), 'enterprise' "
+            "(MNC/GCC/IT-services), or 'all'. Ignored when --file is given.",
+        ),
+    ] = "all",
+    include_configured: Annotated[
+        bool,
+        typer.Option(
+            "--include-configured",
+            help="Also re-validate boards already in config.yaml.",
+        ),
+    ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Print each board's result as it finishes, with a running count.",
+        ),
+    ] = False,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Validate candidate company boards against their ATS API.
+
+    A board is only reported valid if it resolves on a supported ATS, returns
+    well-formed JSON, and lists at least one India role — HTTP 200 alone is never
+    enough. Unsupported portals are flagged for manual review rather than scraped.
+    Pass --adopt to add the passing boards to config.yaml (reversible, additive).
+    """
+    service = _service()
+    candidates = service.load_candidate_boards(
+        source=file, skip_configured=not include_configured, seed_set=seed
+    )
+    if limit is not None:
+        candidates = candidates[:limit]
+    if not candidates:
+        console.print("[yellow]No candidate boards to validate.[/yellow]")
+        return
+    console.print(f"Validating [bold]{len(candidates)}[/bold] candidate board(s)...")
+
+    on_result = _verbose_progress if (verbose and not json_output) else None
+    # With --adopt (and no explicit cap), adopt each board the moment it passes, so
+    # progress is durable: interrupting the run keeps everything already written.
+    # --adopt-limit still needs the full ranked set, so it falls back to a final batch.
+    incremental = adopt and adopt_limit is None
+    summary = _run(
+        service.validate_boards(
+            candidates, adopt_incrementally=incremental, on_result=on_result
+        )
+    )
+    if json_output:
+        _emit(summary.model_dump(mode="json"))
+    else:
+        _print_validation_summary(summary)
+    if adopt:
+        if incremental:
+            added = [r.slug for r in summary.results if r.adoptable]
+        else:
+            added = service.adopt_boards(summary.results, limit=adopt_limit)
+        if json_output:
+            _emit({"adopted": added})
+        else:
+            console.print(
+                f"\n[green]Adopted {len(added)} board(s)[/green] into "
+                f"{service.config.config_path}."
+                + (f" First: {', '.join(added[:8])}" if added else "")
+            )
+            console.print(
+                "Roll back with: restore a config_history snapshot, or remove the "
+                "added entries under the `# --- added` marker."
+            )
+
+
+def _verbose_progress(done: int, total: int, result: BoardValidation) -> None:
+    """Print one line per board as it finishes, so a long run is not silent."""
+    from jobos.models import BoardStatus
+
+    colour = {
+        BoardStatus.VALID: "green",
+        BoardStatus.EMPTY: "dim",
+        BoardStatus.IRRELEVANT: "dim",
+        BoardStatus.MALFORMED: "yellow",
+        BoardStatus.UNSUPPORTED: "yellow",
+        BoardStatus.UNREACHABLE: "red",
+    }.get(result.status, "white")
+    extra = ""
+    if result.status is BoardStatus.VALID:
+        extra = f" — {result.india_role_count} India, {result.relevant_role_count} relevant"
+    console.print(
+        f"[dim]{done:>4}/{total}[/dim] [{colour}]{result.status.value:11}[/{colour}] "
+        f"{result.name}{extra}"
+    )
+
+
+def _print_validation_summary(summary: ValidationSummary) -> None:
+    from jobos.models import BoardStatus
+
+    console.print(
+        f"[bold]{summary.valid} valid[/bold], {summary.empty} empty, "
+        f"{summary.malformed} malformed, {summary.irrelevant} irrelevant, "
+        f"{summary.unsupported} unsupported, {summary.unreachable} unreachable "
+        f"of {summary.candidates} in {summary.duration_seconds}s."
+    )
+    console.print(
+        f"[green]{summary.india_roles} India role(s)[/green], "
+        f"{summary.relevant_roles} matching the target profile.\n"
+    )
+    valid = [r for r in summary.results if r.status is BoardStatus.VALID]
+    valid.sort(key=lambda r: (r.relevant_role_count, r.india_role_count), reverse=True)
+    if valid:
+        table = Table(title="Valid boards (adoptable)")
+        table.add_column("Company")
+        table.add_column("ATS")
+        table.add_column("India", justify="right")
+        table.add_column("Relevant", justify="right")
+        for r in valid[:40]:
+            table.add_row(r.name, r.ats_type, str(r.india_role_count), str(r.relevant_role_count))
+        console.print(table)
+    flagged = [r for r in summary.results if r.status is BoardStatus.UNSUPPORTED]
+    if flagged:
+        console.print(
+            f"\n[yellow]{len(flagged)} portal(s) flagged for manual review[/yellow] "
+            "(no JSON adapter): " + ", ".join(sorted(r.name for r in flagged)[:10])
+        )
+
+
+@app.command()
+def registry(
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Show board coverage: configured, validated, India roles and flagged portals.
+
+    This is the before/after coverage view: `configured` is what config.yaml crawls
+    today, `validated` is how many of those (plus any adopted) passed live
+    validation, and `flagged` portals need manual handling.
+    """
+    service = _service()
+    report = service.coverage_report()
+    if json_output:
+        _emit(report.model_dump(mode="json"))
+        return
+    console.print(
+        f"[bold]Coverage[/bold]: {report.configured_boards} configured, "
+        f"{report.validated_boards} validated, "
+        f"{report.supported_boards} on a supported ATS, "
+        f"{report.unsupported_boards} unsupported."
+    )
+    console.print(
+        f"[green]{report.india_roles} India role(s)[/green] across validated boards, "
+        f"{report.relevant_roles} matching the target profile."
+    )
+    if report.gcc_boards:
+        console.print(
+            f"[cyan]{report.gcc_boards} validated board(s)[/cyan] identified as Global "
+            "Capability Centres (GCCs)."
+        )
+    if report.by_category:
+        table = Table(title="Coverage by company category")
+        table.add_column("Category")
+        table.add_column("Boards", justify="right")
+        table.add_column("India", justify="right")
+        table.add_column("Relevant", justify="right")
+        for item in report.by_category:
+            table.add_row(
+                item.category.value,
+                str(item.boards),
+                str(item.india_roles),
+                str(item.relevant_roles),
+            )
+        console.print(table)
+    if report.unsupported_major_employers:
+        console.print(
+            "\n[yellow]Major employers not yet covered:[/yellow] "
+            + ", ".join(report.unsupported_major_employers)
+        )
+    if report.flagged_for_review:
+        console.print(
+            "\n[yellow]Flagged for manual review:[/yellow] "
+            + ", ".join(report.flagged_for_review[:15])
+        )
+
+
+@app.command("gcc-report")
+def gcc_report(
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """GCC discovery report, measured against the Nasscom-Zinnov 2,117 benchmark.
+
+    Reports evidence-backed GCC employers found, how many are crawlable today, the
+    ATS spread, and honest coverage vs the published GCC universe. The 2,117 is a
+    benchmark to measure against, never a quota to fabricate toward.
+    """
+    service = _service()
+    report = service.gcc_report()
+    if json_output:
+        _emit(report.model_dump(mode="json"))
+        return
+    console.print(
+        f"[bold]GCC discovery[/bold] (benchmark: {report.benchmark_total} — "
+        f"{report.benchmark_source})\n"
+    )
+    rows = [
+        ("GCC candidates seen", report.gcc_candidates_seen),
+        ("Unique GCC employers (by parent)", report.unique_gcc_employers),
+        ("Already in JobOS", report.already_in_jobos),
+        ("Careers pages found", report.careers_pages_found),
+        ("Crawlable boards (verified)", report.crawlable_boards),
+        ("Unsupported / manual-review", report.unsupported_boards),
+        ("With active India jobs", report.with_active_india_jobs),
+        ("Newly added to JobOS", report.newly_added),
+    ]
+    table = Table(title="GCC discovery metrics")
+    table.add_column("Metric")
+    table.add_column("Count", justify="right")
+    for label, value in rows:
+        table.add_row(label, str(value))
+    console.print(table)
+    console.print(
+        f"\n[cyan]Coverage vs benchmark:[/cyan] {report.unique_gcc_employers} of "
+        f"{report.benchmark_total} = [bold]{report.coverage_pct}%[/bold] of the known "
+        "GCC universe (verifiable, public-ATS subset)."
+    )
+    if report.ats_distribution:
+        console.print("\n[bold]ATS provider distribution:[/bold]")
+        for item in report.ats_distribution:
+            console.print(f"  {item.label:16s} {item.count}")
+    if report.failed_validations:
+        console.print("\n[yellow]Failed validations by reason:[/yellow]")
+        for item in report.failed_validations:
+            console.print(f"  {item.label:16s} {item.count}")
+
+
+@app.command("add-job")
+def add_job(
+    title: Annotated[str, typer.Option(help="Job title, e.g. 'AI Engineer'.")],
+    company: Annotated[str, typer.Option(help="Company name.")],
+    description_file: Annotated[
+        typer.FileText,
+        typer.Argument(help="Path to a file with the pasted job description text (use - for stdin)."),
+    ],
+    url: Annotated[
+        str, typer.Option(help="Optional apply URL so `apply` opens the right page.")
+    ] = "",
+) -> None:
+    """Add a job from pasted description text, for portals the crawler cannot read.
+
+    The job is analysed/scored/optimised exactly like a crawled one. Skills and the
+    years-of-experience line are derived from the text.
+    """
+    service = _service()
+    description = description_file.read()
+    try:
+        job = service.add_job_from_text(
+            title=title, company=company, description=description, url=url
+        )
+    except ServiceError as exc:
+        errors.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    console.print(
+        f"[green]Added job {job.id}[/green]: {job.title} at {job.company}. "
+        f"Analyse it with [bold]jobos analyse {job.id}[/bold]."
+    )
 
 
 @app.command()
@@ -594,6 +1014,14 @@ def daily(
     no_crawl: Annotated[
         bool, typer.Option("--no-crawl", help="Skip crawling and use stored jobs.")
     ] = False,
+    ats: Annotated[
+        str,
+        typer.Option(
+            help="Limit the crawl to a speed wave: 'fast' (Greenhouse/Lever/Ashby), "
+            "'medium' (SmartRecruiters/Oracle), 'slow' (Workday), or an ATS list. "
+            "Great for a quick morning pass — scoring still uses all stored jobs.",
+        ),
+    ] = "",
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """One morning run: crawl, score new roles, and prepare tailored resumes to review.
@@ -601,6 +1029,9 @@ def daily(
     Everything up to your review is automated and then it stops. Nothing is submitted:
     review each package, then run `jobos apply <job_id>` to open the employer's form
     and `jobos status <job_id> applied` once you have submitted it.
+
+    Tip for a fast morning routine: `jobos daily --ats fast --since-hours 24` crawls
+    the quick boards, scores today's new preferred roles, and hands you a shortlist.
     """
     service = _service()
     result = _run(
@@ -613,6 +1044,7 @@ def daily(
             top=top,
             analyse_limit=analyse_limit,
             do_crawl=not no_crawl,
+            ats_types=_resolve_ats_wave(ats),
         )
     )
     if json_output:

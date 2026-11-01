@@ -24,7 +24,7 @@ from sqlalchemy import (
 from sqlalchemy import event as sqlalchemy_event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
-from sqlalchemy.sql import Select, select
+from sqlalchemy.sql import Select, select, union
 
 from jobos.models import (
     ApplicationStatus,
@@ -119,6 +119,19 @@ class ApplicationRecord(Base):
     output_dir: Mapped[str] = mapped_column(String(2_000), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ChatMessageRecord(Base):
+    """One turn of the coach conversation, persisted so it remembers across days."""
+
+    __tablename__ = "chat_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    role: Mapped[str] = mapped_column(String(20), index=True)  # "user" | "assistant"
+    content: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, index=True
+    )
 
 
 class Database:
@@ -293,7 +306,78 @@ class Database:
         limit: int = 1_000,
         offset: int = 0,
     ) -> list[JobView]:
-        query: Select[tuple[JobRecord]] = select(JobRecord).where(JobRecord.is_active.is_(True))
+        query = self._job_filter_query(
+            select(JobRecord),
+            search=search,
+            company=company,
+            location=location,
+            locations=locations,
+            status=status,
+            minimum_score=minimum_score,
+            since=since,
+            posted_after=posted_after,
+        )
+        if sort == "score":
+            query = query.order_by(JobRecord.match_score.desc().nullslast())
+        elif sort == "company":
+            query = query.order_by(JobRecord.company.asc())
+        elif sort == "title":
+            query = query.order_by(JobRecord.title.asc())
+        elif sort == "oldest":
+            query = query.order_by(JobRecord.first_seen_at.asc())
+        else:
+            query = query.order_by(JobRecord.first_seen_at.desc())
+        query = query.limit(min(limit, 5_000)).offset(max(offset, 0))
+        with self.session() as session:
+            records = list(session.scalars(query))
+        return [self._job_view(record) for record in records]
+
+    def count_jobs(
+        self,
+        *,
+        search: str = "",
+        company: str = "",
+        location: str = "",
+        locations: list[str] | None = None,
+        status: JobStatus | None = None,
+        minimum_score: int | None = None,
+        since: datetime | None = None,
+        posted_after: datetime | None = None,
+    ) -> int:
+        """Total active jobs matching the same filters as ``list_jobs``, ignoring paging.
+
+        The UI uses this for a truthful "showing X of Y" count: ``list_jobs`` is capped
+        and paged, so its length is only the current page, never the real total.
+        """
+        query = self._job_filter_query(
+            select(func.count()).select_from(JobRecord),
+            search=search,
+            company=company,
+            location=location,
+            locations=locations,
+            status=status,
+            minimum_score=minimum_score,
+            since=since,
+            posted_after=posted_after,
+        )
+        with self.session() as session:
+            return int(session.scalar(query) or 0)
+
+    @staticmethod
+    def _job_filter_query(
+        query: Any,
+        *,
+        search: str,
+        company: str,
+        location: str,
+        locations: list[str] | None,
+        status: JobStatus | None,
+        minimum_score: int | None,
+        since: datetime | None,
+        posted_after: datetime | None,
+    ) -> Any:
+        """Apply the shared active-jobs filters, so list and count never diverge."""
+        query = query.where(JobRecord.is_active.is_(True))
         if since is not None:
             # `first_seen_at` is when JobOS first saw the posting: "new to me".
             query = query.where(JobRecord.first_seen_at >= since)
@@ -329,20 +413,7 @@ class Database:
             query = query.where(JobRecord.status == status.value)
         if minimum_score is not None:
             query = query.where(JobRecord.match_score >= minimum_score)
-        if sort == "score":
-            query = query.order_by(JobRecord.match_score.desc().nullslast())
-        elif sort == "company":
-            query = query.order_by(JobRecord.company.asc())
-        elif sort == "title":
-            query = query.order_by(JobRecord.title.asc())
-        elif sort == "oldest":
-            query = query.order_by(JobRecord.first_seen_at.asc())
-        else:
-            query = query.order_by(JobRecord.first_seen_at.desc())
-        query = query.limit(min(limit, 5_000)).offset(max(offset, 0))
-        with self.session() as session:
-            records = list(session.scalars(query))
-        return [self._job_view(record) for record in records]
+        return query
 
     def deactivate_missing_jobs(self, company: str, seen_fingerprints: set[str]) -> int:
         """Mark this company's postings that the latest crawl did not return as closed.
@@ -374,14 +445,31 @@ class Database:
         with self.session() as session:
             return int(session.scalar(self._prunable_query(func.count(), older_than)) or 0)
 
+    @staticmethod
+    def _protected_job_ids() -> Any:
+        """Job ids referenced by any child table, so deleting them is never attempted.
+
+        Three tables carry a foreign key to ``jobs.id`` — applications, ats_reports and
+        resume_versions — and SQLite rejects deleting a parent any of them still points
+        at. Protecting only applications (the earlier behaviour) left ats_reports and
+        generated resume_versions dangling, which raised a FOREIGN KEY error. This union
+        is the single source of truth for "a job we must keep".
+        """
+        combined = union(
+            select(ApplicationRecord.job_id),
+            select(ATSReportRecord.job_id),
+            select(ResumeVersionRecord.job_id).where(ResumeVersionRecord.job_id.isnot(None)),
+        ).subquery()
+        return select(combined.c[0])
+
     def prune_closed_jobs(self, older_than: datetime) -> int:
         """Delete closed jobs last seen before the cutoff; return how many were removed.
 
         A job is eligible only when it is already inactive (a board stopped listing it)
-        and was last seen before ``older_than``. Jobs referenced by an application are
-        always kept, so prepared packages never dangle.
+        and was last seen before ``older_than``. Jobs referenced by an application, ATS
+        report, or generated resume are always kept, so no child row is ever orphaned.
         """
-        protected = select(ApplicationRecord.job_id)
+        protected = self._protected_job_ids()
         statement = (
             delete(JobRecord)
             .where(JobRecord.is_active.is_(False))
@@ -395,9 +483,8 @@ class Database:
             session.execute(statement)
         return removed
 
-    @staticmethod
-    def _prunable_query(selectable: Any, older_than: datetime) -> Select[Any]:
-        protected = select(ApplicationRecord.job_id)
+    def _prunable_query(self, selectable: Any, older_than: datetime) -> Select[Any]:
+        protected = self._protected_job_ids()
         return (
             select(selectable)
             .select_from(JobRecord)
@@ -406,6 +493,49 @@ class Database:
             .where(JobRecord.id.not_in(protected))
         )
 
+    def count_closed_jobs(self) -> int:
+        """How many postings are soft-deleted (board stopped listing them).
+
+        These no longer appear in ``list_jobs`` but still occupy rows, so the UI can
+        show the figure and offer a hard delete.
+        """
+        with self.session() as session:
+            return int(
+                session.scalar(
+                    select(func.count()).select_from(JobRecord).where(
+                        JobRecord.is_active.is_(False)
+                    )
+                )
+                or 0
+            )
+
+    def hard_delete_closed_jobs(self) -> int:
+        """Permanently remove every soft-deleted job, regardless of age.
+
+        Unlike :meth:`prune_closed_jobs` there is no age cutoff: this is the manual
+        "clear them now" action behind the UI button. Jobs referenced by an
+        application, ATS report, or generated resume are still kept, so no child row is
+        ever orphaned (an unprotected delete raised a FOREIGN KEY error).
+        """
+        protected = self._protected_job_ids()
+        statement = (
+            delete(JobRecord)
+            .where(JobRecord.is_active.is_(False))
+            .where(JobRecord.id.not_in(protected))
+        )
+        with self.session() as session:
+            removed = int(
+                session.scalar(
+                    select(func.count())
+                    .select_from(JobRecord)
+                    .where(JobRecord.is_active.is_(False))
+                    .where(JobRecord.id.not_in(protected))
+                )
+                or 0
+            )
+            session.execute(statement)
+        return removed
+
     def vacuum(self) -> None:
         """Rewrite the database file to reclaim space freed by deletes and rewrites.
 
@@ -413,6 +543,60 @@ class Database:
         """
         with self.engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
             conn.exec_driver_sql("VACUUM")
+
+    def add_chat_message(self, role: str, content: str) -> None:
+        """Persist one conversation turn so the coach remembers across sessions."""
+        with self.session() as session:
+            session.add(ChatMessageRecord(role=role, content=content))
+
+    def recent_chat_messages(self, limit: int = 40) -> list[tuple[str, str]]:
+        """The last ``limit`` turns as (role, content), oldest first for prompt order."""
+        query = (
+            select(ChatMessageRecord)
+            .order_by(ChatMessageRecord.created_at.desc(), ChatMessageRecord.id.desc())
+            .limit(max(1, min(limit, 200)))
+        )
+        with self.session() as session:
+            rows = list(session.scalars(query))
+        rows.reverse()
+        return [(r.role, r.content) for r in rows]
+
+    def clear_chat_messages(self) -> int:
+        """Forget the whole conversation; returns how many turns were removed."""
+        with self.session() as session:
+            count = int(session.scalar(select(func.count()).select_from(ChatMessageRecord)) or 0)
+            session.execute(delete(ChatMessageRecord))
+        return count
+
+    def active_job_facts(self) -> list[tuple[str, str, str, list[str], int | None, datetime]]:
+        """Lean per-job rows for the Insights aggregations, without heavy columns.
+
+        Returns ``(company, title, location, skills, match_score, first_seen_at)`` for
+        every active job. Descriptions are deliberately excluded — they dominate row
+        size and the trends only need titles/locations/skills — so this stays cheap
+        even on a 20k+ job database.
+        """
+        query = select(
+            JobRecord.company,
+            JobRecord.title,
+            JobRecord.location,
+            JobRecord.skills_json,
+            JobRecord.match_score,
+            JobRecord.first_seen_at,
+        ).where(JobRecord.is_active.is_(True))
+        with self.session() as session:
+            rows = session.execute(query).all()
+        return [
+            (
+                str(r[0]),
+                str(r[1]),
+                str(r[2] or ""),
+                list(r[3] or []),
+                r[4],
+                r[5],
+            )
+            for r in rows
+        ]
 
     def companies(self) -> list[str]:
         query = select(JobRecord.company).distinct().order_by(JobRecord.company)
@@ -536,6 +720,25 @@ class Database:
         with self.session() as session:
             record = session.get(ApplicationRecord, application_id)
         return self._application_view(record) if record else None
+
+    def update_optimized_resume(
+        self, application_id: int, resume: StructuredResume
+    ) -> ApplicationView:
+        """Replace a draft application's optimized resume with an edited version.
+
+        Only a draft (not-yet-approved) application may be edited, so an already
+        generated package is never silently changed. The stored master resume is not
+        touched; this only updates this application's working copy.
+        """
+        with self.session() as session:
+            record = session.get(ApplicationRecord, application_id)
+            if record is None:
+                raise LookupError(f"application {application_id} not found")
+            if record.status != ApplicationStatus.DRAFT.value:
+                raise ValueError("this application was already generated and cannot be edited")
+            record.optimized_resume_json = resume.model_dump(mode="json")
+            session.flush()
+        return self.get_application(application_id)  # type: ignore[return-value]
 
     def list_applications(
         self, *, job_id: int | None = None, limit: int = 500

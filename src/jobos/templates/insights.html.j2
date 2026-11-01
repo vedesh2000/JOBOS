@@ -1,0 +1,115 @@
+{% extends "base.html.j2" %}
+{% block title %}Insights — JobOS{% endblock %}
+{% block content %}
+
+{# Horizontal bar list: width is proportional to the largest count in the series. #}
+{% macro barlist(items, accent="") %}
+  {% set top = (items | map(attribute='count') | max) if items else 1 %}
+  <div class="barlist">
+    {% for item in items %}
+    <div class="barrow">
+      <span class="barlabel" title="{{ item.label }}">{{ item.label }}</span>
+      <span class="bartrack">
+        <span class="barfill {{ accent }}" style="width: {{ (100 * item.count / (top or 1)) | round(1) }}%"></span>
+      </span>
+      <span class="barcount">{{ item.count }}{% if item.pct %} <span class="subtle">({{ item.pct }}%)</span>{% endif %}</span>
+    </div>
+    {% endfor %}
+  </div>
+{% endmacro %}
+
+<div class="page-head">
+  <div>
+    <h1>Insights</h1>
+    <p class="subtle">
+      Trends computed from your local data — {{ report.total_jobs }} active jobs across
+      {{ report.total_companies }} companies. No data leaves your machine.
+    </p>
+  </div>
+</div>
+
+<div class="stats">
+  <div class="stat"><b>{{ report.total_companies }}</b><span>Companies</span></div>
+  <div class="stat"><b>{{ report.validated_companies }}</b><span>Validated</span></div>
+  <div class="stat"><b>{{ report.total_jobs }}</b><span>Active jobs</span></div>
+  <div class="stat"><b>{{ report.new_jobs_7d }}</b><span>New (7d)</span></div>
+  <div class="stat"><b>{{ report.new_jobs_30d }}</b><span>New (30d)</span></div>
+  <div class="stat"><b>{{ report.scored_jobs }}</b><span>Scored</span></div>
+</div>
+
+{# New jobs per day, last 14 days — a simple inline SVG sparkline/bar. #}
+{% if report.new_jobs_timeline %}
+{% set tmax = (report.new_jobs_timeline | map(attribute='count') | max) or 1 %}
+<section class="card">
+  <h2>New jobs — last 14 days</h2>
+  <svg class="spark" viewBox="0 0 280 60" preserveAspectRatio="none" role="img"
+       aria-label="New jobs per day for the last 14 days">
+    {% for d in report.new_jobs_timeline %}
+    {% set bw = 280 / (report.new_jobs_timeline | length) %}
+    {% set bh = (50 * d.count / tmax) | round(1) %}
+    <rect x="{{ (loop.index0 * bw) | round(1) }}" y="{{ (56 - bh) | round(1) }}"
+          width="{{ (bw - 2) | round(1) }}" height="{{ bh }}" class="sparkbar">
+      <title>{{ d.label }}: {{ d.count }}</title>
+    </rect>
+    {% endfor %}
+  </svg>
+  <p class="subtle">{{ report.new_jobs_timeline[0].label }} → {{ report.new_jobs_timeline[-1].label }}</p>
+</section>
+{% endif %}
+
+<div class="insight-grid">
+  <section class="card">
+    <h2>Tech stack across jobs</h2>
+    <p class="subtle">How many active jobs mention each skill (whole-token; “java” ≠ “javascript”).</p>
+    {{ barlist(report.tracked_skills, "accent-blue") }}
+  </section>
+
+  <section class="card">
+    <h2>Most common skills</h2>
+    <p class="subtle">Top skills detected across all active postings.</p>
+    {{ barlist(report.top_skills) }}
+  </section>
+
+  <section class="card">
+    <h2>Where the jobs are</h2>
+    {{ barlist(report.by_location, "accent-green") }}
+  </section>
+
+  <section class="card">
+    <h2>Companies by category</h2>
+    <p class="subtle">Validated boards per employer type.</p>
+    {{ barlist(report.by_category, "accent-purple") }}
+  </section>
+
+  <section class="card">
+    <h2>Top companies by openings</h2>
+    {{ barlist(report.top_companies) }}
+  </section>
+
+  <section class="card">
+    <h2>Your match-score spread</h2>
+    <p class="subtle">Over {{ report.scored_jobs }} scored jobs. Run “Analyse” to score more.</p>
+    {{ barlist(report.score_buckets, "accent-green") }}
+  </section>
+</div>
+
+<section class="card" id="ask-insights">
+  <h2>Ask about your data</h2>
+  <p class="subtle">
+    Ask a question and the assistant answers from these numbers only — it won't invent
+    anything. Needs an <a href="/ai">AI provider</a>; without one you get the headline figures.
+  </p>
+  <div class="suggestions">
+    {% for q in suggestions %}
+    <button type="button" class="chip ask-suggestion">{{ q }}</button>
+    {% endfor %}
+  </div>
+  <form id="ask-form" class="coach-form" method="post" action="/insights/ask">
+    <input type="text" name="question" id="ask-input" autocomplete="off"
+           placeholder="e.g. how many of my jobs are Java?" required>
+    <button type="submit" class="btn primary">Ask</button>
+  </form>
+  <div id="ask-answer" class="ask-answer" hidden></div>
+</section>
+
+{% endblock %}

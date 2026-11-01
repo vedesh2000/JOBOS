@@ -7,18 +7,61 @@
   ordering without ever touching your facts.
 </p>
 
-<div class="card">
-  <h2>Upload</h2>
+<details class="card" {% if not master %}open{% endif %}>
+  <summary><b>Upload a resume</b> <span class="subtle">(YAML/JSON, PDF, DOCX, or Markdown)</span></summary>
   <form method="post" action="/resume/upload" enctype="multipart/form-data" class="actions"
-        data-busy="Reading resume...">
-    <input type="file" name="file" accept=".pdf,.docx,.md,.markdown" required>
+        data-busy="Reading resume..." style="margin-top:10px">
+    <input type="file" name="file" accept=".yaml,.yml,.json,.pdf,.docx,.md,.markdown" required>
     <button type="submit" class="btn primary">Upload and structure</button>
   </form>
   <p class="subtle" style="margin-top:10px">
-    PDF, DOCX, or Markdown, up to 10 MB. A new upload becomes the current master; earlier
-    versions are kept.
+    <b>YAML or JSON</b> is the reliable path: it is already structured, so it is validated
+    against the schema with no guessing. <b>PDF, DOCX, or Markdown</b> also work, but are
+    extracted and may need review — if extraction is imperfect, the import falls back to a
+    conservative parser and flags it. Up to 10 MB. A new upload becomes the current master;
+    earlier versions are kept.
   </p>
-</div>
+</details>
+
+<details class="card">
+  <summary><b>No YAML yet? Create your first one from your PDF</b></summary>
+  <p class="subtle" style="margin-top:10px">
+    Easiest path to a reliable resume: copy the prompt below, paste it into ChatGPT (or any
+    AI assistant) <b>together with your existing PDF/DOCX resume</b>, and it returns a valid
+    JobOS YAML. Save that as <code>your.resume.yaml</code> and upload it above. The prompt
+    tells the AI to transcribe only what your resume says — it will not invent facts. See the
+    full <a href="/resume/guide" target="_blank" rel="noopener">resume YAML guide</a> for
+    details and troubleshooting.
+  </p>
+  {% if yaml_prompt %}
+  <div class="actions" style="margin-bottom:8px">
+    <button type="button" class="btn small primary" id="copy-prompt-btn">Copy prompt</button>
+    <span class="subtle" id="copy-prompt-status" style="margin-left:8px"></span>
+  </div>
+  <textarea id="yaml-prompt" readonly spellcheck="false"
+            style="width:100%;min-height:220px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.45;white-space:pre;overflow:auto;">{{ yaml_prompt }}</textarea>
+  <script>
+  (function () {
+    var btn = document.getElementById("copy-prompt-btn");
+    var area = document.getElementById("yaml-prompt");
+    var status = document.getElementById("copy-prompt-status");
+    if (!btn || !area) return;
+    btn.addEventListener("click", async function () {
+      try {
+        await navigator.clipboard.writeText(area.value);
+        status.textContent = "Copied — now paste it into ChatGPT with your resume.";
+      } catch (err) {
+        // Fallback: select the text so the user can copy manually.
+        area.focus(); area.select();
+        status.textContent = "Press Ctrl/Cmd+C to copy.";
+      }
+    });
+  })();
+  </script>
+  {% else %}
+  <p class="subtle">The prompt guide is unavailable (docs/resume-yaml-guide.md not found).</p>
+  {% endif %}
+</details>
 
 {% if warnings %}
 <div class="flash warn">
@@ -39,8 +82,10 @@
     </div>
     <div class="spacer"></div>
     <div class="actions">
-      <a class="btn small primary" href="/resume/{{ master.id }}.pdf" target="_blank" rel="noopener">View PDF</a>
+      <a class="btn small primary" href="/resume/{{ master.id }}.pdf" target="_blank" rel="noopener">View PDF ({{ pdf_stem }}.pdf)</a>
       <a class="btn small" href="/resume/{{ master.id }}.html" target="_blank" rel="noopener">View HTML</a>
+      <a class="btn small" href="/resume/{{ master.id }}.yaml" target="_blank" rel="noopener">YAML</a>
+      <a class="btn small" href="/resume/{{ master.id }}.yaml?download=1">Download YAML</a>
       <a class="btn small" href="/resume/{{ master.id }}.json" target="_blank" rel="noopener">JSON</a>
     </div>
   </div>
@@ -93,6 +138,84 @@
     </div>
   </div>
 </div>
+
+<div class="card">
+  <div class="page-head">
+    <div>
+      <h2 style="margin-top:0">Edit YAML</h2>
+      <p class="subtle">
+        Tweak the current version's YAML and save it as a new version. Older versions
+        are kept; the save becomes the current master. Everything is validated against
+        the resume schema, so your facts, dates, and IDs cannot be silently broken.
+      </p>
+    </div>
+    <div class="spacer"></div>
+    <div class="actions">
+      <button type="button" class="btn small" id="yaml-preview-btn">Preview</button>
+      <button type="submit" class="btn small primary" form="yaml-edit-form">Save as new version</button>
+    </div>
+  </div>
+
+  <div class="grid two">
+    <form method="post" action="/resume/edit" id="yaml-edit-form" data-busy="Validating and saving...">
+      <label class="subtle" for="resume_yaml">resume.yaml</label>
+      <textarea id="resume_yaml" name="resume_yaml" spellcheck="false"
+                style="width:100%;min-height:520px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.45;white-space:pre;overflow:auto;">{{ master_yaml }}</textarea>
+    </form>
+    <div>
+      <label class="subtle">Live preview</label>
+      <div id="yaml-preview-error" class="flash warn" style="display:none"></div>
+      <iframe id="yaml-preview" title="Resume preview"
+              style="width:100%;min-height:520px;border:1px solid var(--border,#2a2a2a);border-radius:8px;background:#fff;"></iframe>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var editor = document.getElementById("resume_yaml");
+  var frame = document.getElementById("yaml-preview");
+  var errorBox = document.getElementById("yaml-preview-error");
+  var button = document.getElementById("yaml-preview-btn");
+  if (!editor || !frame) return;
+
+  var timer = null;
+
+  async function refresh() {
+    var body = new URLSearchParams();
+    body.set("resume_yaml", editor.value);
+    try {
+      var res = await fetch("/resume/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: body.toString(),
+      });
+      var text = await res.text();
+      if (res.ok) {
+        errorBox.style.display = "none";
+        // Rendered HTML is trusted server output (autoescaped Jinja, no scripts).
+        frame.srcdoc = text;
+      } else {
+        errorBox.textContent = text || ("Preview failed (" + res.status + ")");
+        errorBox.style.display = "";
+      }
+    } catch (err) {
+      errorBox.textContent = "Preview request failed: " + err;
+      errorBox.style.display = "";
+    }
+  }
+
+  // Debounced auto-preview as you type, plus an explicit button for immediacy.
+  editor.addEventListener("input", function () {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(refresh, 600);
+  });
+  if (button) button.addEventListener("click", refresh);
+
+  // Show the current version immediately on load.
+  refresh();
+})();
+</script>
 
 {% if versions | length > 1 %}
 <div class="card">

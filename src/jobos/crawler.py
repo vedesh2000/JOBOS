@@ -212,6 +212,50 @@ def parse_json_ld_jobs(html: str, company: str, source_url: str) -> list[JobData
     return jobs
 
 
+# ATS adapters that reach a real JSON API. A board on any other host falls back to
+# the brittle HTML/JSON-LD path and is treated as "unsupported" for validation: it
+# is flagged for manual review rather than reported as a working board.
+SUPPORTED_ATS_HOSTS: tuple[tuple[str, str], ...] = (
+    ("greenhouse.io", "greenhouse"),
+    ("lever.co", "lever"),
+    ("ashbyhq.com", "ashby"),
+    ("smartrecruiters.com", "smartrecruiters"),
+    ("myworkdayjobs.com", "workday"),
+    ("oraclecloud.com", "oracle"),
+)
+
+
+# Crawl speed waves, ordered fastest-first. A "fast" board returns its whole listing
+# in one request; "medium" pages a list then fetches a detail per posting; "slow"
+# (Workday) also has no server-side location filter, so it is the long tail. Defined
+# here, next to the adapters, so the CLI, service and web all agree on one ordering.
+CRAWL_WAVES: tuple[tuple[str, set[str]], ...] = (
+    ("fast", {"greenhouse", "lever", "ashby"}),
+    ("medium", {"smartrecruiters", "oracle"}),
+    ("slow", {"workday"}),
+)
+
+
+def detect_ats_type(url: str) -> str:
+    """Return the ATS adapter a URL would use, or "" if only the generic path applies.
+
+    Shared by the crawler dispatch and the board validator so both agree on what
+    counts as a supported board, from the single list above.
+    """
+    host = (urlsplit(url).hostname or "").casefold()
+    path = urlsplit(url).path.casefold()
+    path_parts = [part for part in urlsplit(url).path.split("/") if part]
+    for needle, name in SUPPORTED_ATS_HOSTS:
+        if needle not in host or not path_parts:
+            continue
+        # Oracle Cloud hosts many apps; only an Oracle Recruiting Cloud candidate-
+        # experience URL (…/CandidateExperience/…/sites/<SITE>) is a job board.
+        if name == "oracle" and "candidateexperience" not in path:
+            return ""
+        return name
+    return ""
+
+
 _ATS_NAME_HOSTS = ("greenhouse.io", "lever.co", "ashbyhq.com", "smartrecruiters.com")
 _CAREER_SUBDOMAINS = {
     "www", "careers", "career", "jobs", "job", "boards", "board", "apply", "work", "join", "talent",
@@ -265,18 +309,30 @@ class CareerCrawler:
         self._cache: dict[str, str] = {}
 
     async def crawl(
-        self, company_slug: str | None = None, *, summary: CrawlSummary | None = None
+        self,
+        company_slug: str | None = None,
+        *,
+        summary: CrawlSummary | None = None,
+        ats_types: set[str] | None = None,
     ) -> CrawlSummary:
         """Crawl configured companies, filling ``summary`` as each one finishes.
 
         Passing a ``summary`` lets a caller watch a long crawl progress: counts are
         updated per company rather than all at the end, which is what the dashboard
         spinner polls.
+
+        ``ats_types`` restricts the crawl to boards on those ATSs (e.g.
+        ``{"greenhouse", "lever", "ashby"}`` for the fast wave). This is how a crawl
+        is run in speed tiers — fast single-request boards first, slow per-posting
+        ones (Workday) separately — so a full refresh need not be one long blocking
+        run. ``None`` crawls every enabled board, as before.
         """
         selected = {
             slug: company
             for slug, company in self.config.companies.items()
-            if company.enabled and (company_slug is None or slug == company_slug)
+            if company.enabled
+            and (company_slug is None or slug == company_slug)
+            and (ats_types is None or (detect_ats_type(company.url) or "generic") in ats_types)
         }
         if company_slug and company_slug not in self.config.companies:
             raise CrawlError(f"company {company_slug!r} is not configured")
@@ -284,6 +340,9 @@ class CareerCrawler:
         result.companies_requested = len(selected)
         if not selected:
             return result
+        # Closing delisted postings is per-company (each board only retires its own
+        # jobs), so a wave crawl safely closes within the boards it did crawl and
+        # never touches boards in another wave.
         await self._crawl_with_client(selected, result, close_missing=True)
         return result
 
@@ -389,16 +448,19 @@ class CareerCrawler:
         parsed = urlsplit(company.url)
         host = (parsed.hostname or "").casefold()
         path_parts = [part for part in parsed.path.split("/") if part]
-        if "greenhouse.io" in host and path_parts:
+        ats = detect_ats_type(company.url)
+        if ats == "greenhouse":
             return await self._greenhouse(company, path_parts[0])
-        if host.endswith("lever.co") and path_parts:
+        if ats == "lever":
             return await self._lever(company, path_parts[0])
-        if "ashbyhq.com" in host and path_parts:
+        if ats == "ashby":
             return await self._ashby(company, path_parts[0])
-        if "smartrecruiters.com" in host and path_parts:
+        if ats == "smartrecruiters":
             return await self._smartrecruiters(company, path_parts[0])
-        if "myworkdayjobs.com" in host and path_parts:
+        if ats == "workday":
             return await self._workday(company, host, path_parts)
+        if ats == "oracle":
+            return await self._oracle(company, host, path_parts)
         return await self._generic(company)
 
     async def _greenhouse(self, company: CompanySettings, board: str) -> list[JobData]:
@@ -497,15 +559,56 @@ class CareerCrawler:
             )
         return jobs
 
+    def _preferred_country(self) -> str:
+        """ISO country code to narrow a paginated board to, from preferences, or "".
+
+        Only SmartRecruiters uses this today, as a fetch optimisation: its listing is
+        paginated, so filtering server-side to the country the user actually wants
+        avoids paging through hundreds of unrelated global postings. Returns "" (no
+        filter) unless India is clearly among the preferred locations, so a user who
+        broadens their locations keeps the full, unfiltered board.
+        """
+        india_terms = {"india", "hyderabad", "bengaluru", "bangalore", "pune"}
+        locations = {loc.casefold() for loc in self.config.preferences.preferred_locations}
+        return "in" if locations & india_terms else ""
+
     async def _smartrecruiters(self, company: CompanySettings, account: str) -> list[JobData]:
-        url = f"https://api.smartrecruiters.com/v1/companies/{account}/postings?limit=100"
-        payload = await self._json_request("GET", url, honor_robots=False)
-        content = _list_field(payload, "content")
-        listed = [
-            item
-            for item in content[: self.config.crawler.per_company_limit]
-            if isinstance(item, dict) and _as_text(item.get("id"))
-        ]
+        # Page the listing instead of taking only the first 100. Large enterprise
+        # boards on SmartRecruiters (Bosch, ServiceNow, NielsenIQ) run to many
+        # hundreds of postings, so the old single-page fetch silently truncated them
+        # to 100 — dropping most of the India roles that made the board worth adding.
+        #
+        # When India is a preferred location the board is paged through the ATS's own
+        # `country` filter, so the request budget is spent on the postings that
+        # matter rather than on hundreds of unrelated global roles. This is a fetch
+        # optimisation only: final India-vs-remote relevance is still decided
+        # downstream by preferences, exactly as for every other adapter.
+        base_list = f"https://api.smartrecruiters.com/v1/companies/{account}/postings"
+        country = self._preferred_country()
+        page_size = 100
+        offset = 0
+        listed: list[dict[str, Any]] = []
+        cap = self.config.crawler.per_company_limit
+        while len(listed) < cap:
+            query = f"limit={page_size}&offset={offset}"
+            if country:
+                query += f"&country={country}"
+            payload = await self._json_request(
+                "GET", f"{base_list}?{query}", honor_robots=False
+            )
+            page = _list_field(payload, "content")
+            if not page:
+                break
+            for item in page:
+                if isinstance(item, dict) and _as_text(item.get("id")):
+                    listed.append(item)
+            total = payload.get("totalFound") if isinstance(payload, dict) else None
+            offset += page_size
+            if isinstance(total, (int, float)) and offset >= int(total):
+                break
+            if len(page) < page_size:
+                break
+        listed = listed[:cap]
         # One detail request per posting. Fetched concurrently because doing this in
         # series dominated the crawl (measured ~0.4s per posting); the shared request
         # semaphore still bounds how many are in flight.
@@ -629,6 +732,100 @@ class CareerCrawler:
             # guards above end the loop otherwise.
             if isinstance(total, (int, float)) and total > 0 and offset >= int(total):
                 break
+        return jobs
+
+    async def _oracle(
+        self, company: CompanySettings, host: str, path_parts: list[str]
+    ) -> list[JobData]:
+        """Oracle Recruiting Cloud (ORC) candidate-experience boards.
+
+        ORC exposes two public JSON endpoints under ``/hcmRestApi/resources/latest``:
+        a paginated requisition *list* (title/location/date, but no description) and a
+        per-requisition *detail* that carries the full description. So, like Workday
+        and SmartRecruiters, this pages the list and then fetches one detail per
+        posting (concurrently, bounded by the shared request semaphore). The site
+        number is the last path segment of the board URL (…/sites/CX_1001); it varies
+        per tenant, so it is read from the URL rather than assumed.
+        """
+        site = path_parts[-1] if path_parts else "CX_1"
+        api = f"https://{host}/hcmRestApi/resources/latest"
+        list_base = f"{api}/recruitingCEJobRequisitions"
+        detail_base = f"{api}/recruitingCEJobRequisitionDetails"
+
+        cap = self.config.crawler.per_company_limit
+        page_size = 50
+        offset = 0
+        listed: list[dict[str, Any]] = []
+        total: int | None = None
+        while len(listed) < cap:
+            finder = f"findReqs;siteNumber={site},limit={page_size},offset={offset},sortBy=POSTING_DATES_DESC"
+            # `requisitionList` is only returned when explicitly expanded; without this
+            # the response carries only search metadata and no jobs.
+            url = f"{list_base}?onlyData=true&expand=requisitionList&finder={finder}"
+            payload = await self._json_request("GET", url, honor_robots=False)
+            items = _list_field(payload, "items")
+            group = items[0] if items and isinstance(items[0], dict) else {}
+            reqs = _list_field(group, "requisitionList")
+            if total is None:
+                raw_total = group.get("TotalJobsCount")
+                total = int(raw_total) if isinstance(raw_total, (int, float)) else None
+            if not reqs:
+                break
+            for req in reqs:
+                if isinstance(req, dict) and _as_text(req.get("Id")):
+                    listed.append(req)
+            offset += page_size
+            if total is not None and offset >= total:
+                break
+            if len(reqs) < page_size:
+                break
+        listed = listed[:cap]
+
+        # One detail request per requisition for the description, fetched concurrently.
+        detail_urls = [
+            f'{detail_base}?expand=all&onlyData=true&finder=ById;Id="{_as_text(req.get("Id"))}",siteNumber={site}'
+            for req in listed
+        ]
+        details = await self._gather_json(detail_urls)
+
+        jobs: list[JobData] = []
+        for req, detail in zip(listed, details, strict=True):
+            job_id = _as_text(req.get("Id"))
+            detail_item = {}
+            if isinstance(detail, dict):
+                detail_items = _list_field(detail, "items")
+                if detail_items and isinstance(detail_items[0], dict):
+                    detail_item = detail_items[0]
+            description = _clean_html(
+                _as_text(detail_item.get("ExternalDescriptionStr"))
+                + "\n"
+                + _as_text(detail_item.get("ExternalQualificationsStr"))
+                + "\n"
+                + _as_text(detail_item.get("ExternalResponsibilitiesStr"))
+            )
+            location = _as_text(req.get("PrimaryLocation")) or _as_text(
+                detail_item.get("PrimaryLocation")
+            )
+            # The public apply/detail page a candidate actually opens.
+            apply_url = (
+                f"https://{host}/hcmUI/CandidateExperience/en/sites/{site}/job/{job_id}"
+            )
+            jobs.append(
+                JobData(
+                    company=company.name,
+                    title=_as_text(req.get("Title") or detail_item.get("Title"))
+                    or "Untitled role",
+                    location=location,
+                    description=description,
+                    experience=_extract_experience_text(description),
+                    skills=extract_known_skills(description),
+                    apply_url=apply_url,
+                    source_url=company.url,
+                    external_id=job_id,
+                    employment_type=_as_text(req.get("JobType")),
+                    posted_at=_as_datetime(req.get("PostedDate")),
+                )
+            )
         return jobs
 
     async def _generic(self, company: CompanySettings) -> list[JobData]:

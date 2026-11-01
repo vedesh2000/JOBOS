@@ -30,9 +30,14 @@ bound to loopback. AI is optional; every AI step has a deterministic fallback.
 
 ## What it does
 
-1. **Crawls** career boards you explicitly list (Greenhouse, Lever, Ashby,
-   SmartRecruiters, Workday via their public JSON APIs; other sites via JSON-LD and
-   conservative HTML parsing).
+0. **Ships with 1,100+ pre-validated job boards.** `config.example.yaml` comes with
+   over 1,100 real company career boards already configured — including many Indian
+   Global Capability Centres (GCCs) of global banks, retailers, pharma and industrial
+   firms. Every board was validated against its ATS's public API (Greenhouse, Lever,
+   Ashby, SmartRecruiters, Workday, Oracle) for India engineering roles, so you can
+   crawl immediately instead of building a company list from scratch.
+1. **Crawls** those boards (Greenhouse, Lever, Ashby, SmartRecruiters, Workday, Oracle
+   via their public JSON APIs; other sites via JSON-LD and conservative HTML parsing).
 2. **Analyses** each posting into structured requirements: skills, years, seniority.
 3. **Scores** your resume against the posting with an explainable ATS-style score.
 4. **Optimises** your resume for a specific role by rewording and reordering
@@ -53,8 +58,18 @@ uv sync
 uv run playwright install chromium   # one-time, needed for PDF rendering
 ```
 
-Optional, for AI-assisted wording: install [Ollama](https://ollama.com) and pull a
-model (`ollama pull gemma3:12b`). Without it, JobOS uses deterministic fallbacks.
+Optional, for AI-assisted wording: install [Ollama](https://ollama.com). The example
+config defaults to Ollama's hosted Nemotron — capable, free to try, no large download:
+
+```bash
+ollama pull nemotron-3-super:cloud      # runs on Ollama's servers (data leaves your machine for that call)
+```
+
+For **fully local / private** use (nothing leaves your machine), pull a local model
+instead and set it in `config.yaml`: `nemotron-mini` (~2.7 GB, fast) or `gemma3:12b`
+(better tailoring). Either way, AI is optional — every step has a deterministic
+fallback, so if the model errors or hits a limit, JobOS still completes and you can
+switch models or add an API key on the AI page.
 
 ---
 
@@ -62,9 +77,10 @@ model (`ollama pull gemma3:12b`). Without it, JobOS uses deterministic fallbacks
 
 ```bash
 uv run jobos init                       # creates config.yaml from the example
+                                        #   (includes 1,100+ pre-validated boards)
 uv run jobos doctor                     # verifies model, Chromium, database, resume
 uv run jobos resume import my.resume.yaml
-uv run jobos crawl
+uv run jobos crawl --ats fast           # fast wave (~1-2 min) — start applying right away
 uv run jobos analyse-all --location India --limit 40
 uv run jobos report --location India    # per-company shortlist
 uv run jobos optimise <job_id>
@@ -73,6 +89,12 @@ uv run jobos generate <application_id>
 uv run jobos apply <job_id>
 uv run jobos status <job_id> applied
 ```
+
+Because the config ships with 1,100+ boards, your first `crawl` already has plenty to
+pull from. Crawl in speed **waves** so you are not blocked by the slow boards:
+`--ats fast` (Greenhouse/Lever/Ashby, ~1-2 min), `--ats medium` (SmartRecruiters/
+Oracle), `--ats slow` (Workday), or `jobos crawl-waves` to run all three in order with
+a notification as each finishes.
 
 Run `uv run jobos doctor` any time something looks wrong; it checks each dependency
 and tells you what needs attention.

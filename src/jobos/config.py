@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, Self
 
@@ -173,6 +174,16 @@ class AppConfig(StrictModel):
     def uploads_dir(self) -> Path:
         return self.data_dir / "uploads"
 
+    @property
+    def config_history_dir(self) -> Path:
+        """Where timestamped config.yaml backups are kept before each write."""
+        return self.data_dir / "config_history"
+
+    @property
+    def env_path(self) -> Path:
+        """Local .env for API keys, kept in the gitignored data dir, never committed."""
+        return self.data_dir / ".env"
+
     def ensure_directories(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.uploads_dir.mkdir(parents=True, exist_ok=True)
@@ -266,4 +277,106 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     raw["config_path"] = config_path
     config = AppConfig.model_validate(raw)
     config.ensure_directories()
+    load_env_file(config.env_path)
     return config
+
+
+def load_env_file(path: Path) -> None:
+    """Load KEY=VALUE lines from a local .env into os.environ (without overriding).
+
+    Only JOBOS_* keys are applied, and a value already present in the real
+    environment wins — so an explicit shell export always takes precedence over the
+    file. This lets the AI page persist an API key to .jobos/.env and have it take
+    effect on the next start, without ever touching config.yaml.
+    """
+    if not path.exists():
+        return
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            if key.startswith("JOBOS_") and key not in os.environ:
+                os.environ[key] = value.strip().strip('"').strip("'")
+    except OSError:
+        return
+
+
+def replace_top_level_block(text: str, key: str, new_block: str) -> str:
+    """Replace one top-level YAML block (e.g. ``ai:``) in place, preserving the rest.
+
+    The rest of the file — including hand-written comments elsewhere, like the
+    companies annotations — is left byte-for-byte untouched. This exists because
+    re-dumping the whole document through ``yaml.safe_dump`` would strip every
+    comment. ``new_block`` must be the full replacement including the ``key:`` line.
+
+    Raises ValueError if the key's block is not found at the top level.
+    """
+    lines = text.splitlines()
+    start = next(
+        (i for i, line in enumerate(lines) if re.match(rf"^{re.escape(key)}:\s*(#.*)?$", line)),
+        None,
+    )
+    if start is None:
+        raise ValueError(f"could not find a top-level `{key}:` block to replace")
+    # The block runs until the next line that starts at column 0 and is not blank
+    # (i.e. the next top-level key or comment introducing a new section).
+    end = len(lines)
+    for i in range(start + 1, len(lines)):
+        line = lines[i]
+        if line and not line[0].isspace():
+            end = i
+            break
+    new_lines = new_block.rstrip("\n").splitlines()
+    rebuilt = lines[:start] + new_lines + lines[end:]
+    return "\n".join(rebuilt) + "\n"
+
+
+def validate_config_text(text: str, config_path: Path) -> AppConfig:
+    """Parse and fully validate candidate config YAML without writing anything.
+
+    Used before a UI/API save so a broken edit is rejected with a precise message
+    instead of being written and breaking the next startup. Raises ValueError on any
+    YAML or schema problem.
+    """
+    try:
+        raw = yaml.safe_load(text) or {}
+    except yaml.YAMLError as exc:
+        raise ValueError(f"invalid YAML: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise ValueError("configuration root must be a YAML mapping")
+    raw["config_path"] = config_path
+    return AppConfig.model_validate(raw)
+
+
+def write_config_text(config_path: Path, text: str, *, history_dir: Path) -> Path:
+    """Validate, back up the previous file, then atomically overwrite the config.
+
+    The order matters: validation first (a bad edit never reaches disk), then a
+    timestamped snapshot of the current file into ``history_dir`` (so an agent or a
+    user overwrite is always recoverable), then an atomic temp-write-and-rename so a
+    crash mid-write cannot leave a half-written config. Returns the backup path, or
+    the config path itself when there was no prior file to snapshot.
+    """
+    validate_config_text(text, config_path)
+    backup_path = config_path
+    if config_path.exists():
+        history_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S-%f")
+        backup_path = history_dir / f"config-{stamp}.yaml"
+        backup_path.write_text(config_path.read_text(encoding="utf-8"), encoding="utf-8")
+    # Atomic replace: write a sibling temp file, then rename over the target.
+    tmp = config_path.with_suffix(config_path.suffix + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, config_path)
+    return backup_path
+
+
+def list_config_backups(history_dir: Path, limit: int = 50) -> list[Path]:
+    """Return timestamped config snapshots, newest first, for a restore UI."""
+    if not history_dir.is_dir():
+        return []
+    backups = sorted(history_dir.glob("config-*.yaml"), reverse=True)
+    return backups[:limit]

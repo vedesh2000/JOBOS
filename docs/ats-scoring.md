@@ -1,6 +1,11 @@
 # ATS compatibility scoring
 
-JobOS reports an explainable compatibility estimate, not a claim about any employer's proprietary ATS. The algorithm is versioned as `jobos-ats-v1` and deliberately uses more than raw keyword frequency.
+JobOS reports an explainable compatibility estimate, not a claim about any employer's proprietary ATS. The algorithm is versioned; the current scorer is `jobos-ats-v2`, and `jobos-ats-v1` is retained unchanged so historical reports remain reproducible. Both deliberately use more than raw keyword frequency.
+
+## Scorer versions
+
+- **`jobos-ats-v2` (current).** Adds three corrections over v1: OR/alternative requirement groups, N/A preferred-skill coverage with transparent renormalization, and responsibility matches that cite their supporting resume bullet. See "What changed in v2" below.
+- **`jobos-ats-v1` (historical).** The original scorer, preserved byte-for-byte. Any report stored under v1 reproduces exactly; JobOS never silently rescales an old result to the new algorithm. A report always records the version it was scored with, so before/after comparisons use a single version.
 
 ## Research basis
 
@@ -14,15 +19,25 @@ _Content from linked sources was rephrased for compliance with licensing restric
 
 | Component | Weight | Method |
 | --- | ---: | --- |
-| Required-skill coverage | 25 | Required skills supported anywhere in the resume, using exact normalized terms and a small explicit alias map. Unknown requirements are not guessed. |
-| Preferred-skill coverage | 10 | Same method for preferred skills, with a lower weight. |
+| Required-skill coverage | 25 | Required skills supported anywhere in the resume, using exact normalized terms and a small explicit alias map. In v2, requirements phrased as alternatives ("React or Vue") form one group that is satisfied by matching any member. Unknown requirements are not guessed. |
+| Preferred-skill coverage | 10 | Same method for preferred skills, with a lower weight. In v2, when a posting lists no preferred skills the component is reported as N/A and its 10 points are removed from the denominator (the remaining 90 are rescaled to 100) rather than awarding a vacuous full score. |
 | Contextual evidence | 15 | A matched skill earns full evidence when it appears in experience/project text and partial evidence when it appears only in the skills section. Repetition is capped. |
-| Responsibility alignment | 15 | Compares meaningful job-responsibility phrases with experience/project bullets using normalized phrase and token-set similarity, excluding boilerplate stop words. |
+| Responsibility alignment | 15 | Compares meaningful job-responsibility phrases with experience/project bullets using normalized phrase and token-set similarity, excluding boilerplate stop words. In v2 the same similarity bar is used (it is **not** loosened), but each supported responsibility now cites the specific bullet that supports it, and a responsibility with no bullet above the bar stays an honest gap — nothing is inferred from loosely related technology. |
 | Experience, seniority, education | 15 | Compares explicit years/level/degree requirements with dated experience and structured education. Missing job requirements remain neutral rather than failures. |
 | Role/title alignment | 10 | Compares the target title/role family with prior titles, summary, and project evidence using token-set similarity. |
 | Parseability and structure | 10 | Structured contact data, standard sections, dated experience, non-empty bullets, sane length, and text-extractable generated PDF. |
 
 The total is a weighted sum rounded to an integer. Every component includes its points, maximum, evidence, gaps, and suggestions.
+
+## What changed in v2
+
+v2 corrects three issues observed in v1 without lowering any matching bar or rewarding reordering:
+
+1. **OR / alternative requirements.** A posting that asks for "a modern UI framework like React or Vue" is one requirement, not two. v2 groups such alternatives (detected deterministically from the job text) so matching one member satisfies the group. In v1, React present + Vue absent counted Vue as an independent missing required skill and capped the component; v2 awards full credit for that requirement.
+2. **N/A preferred coverage.** When a posting lists no preferred skills, v1 awarded the full 10/10 for an empty set — a vacuous boost. v2 marks the component N/A and renormalizes: its 10 points leave the denominator and the remaining components are rescaled to 100. This can move a score down relative to v1; that is the honest direction.
+3. **Evidence-cited responsibility matching.** v2 keeps v1's 0.55 similarity threshold but records which resume bullet supports each matched responsibility, so a match is auditable. Unmatched responsibilities remain gaps; v2 never infers unit testing, code reviews, or mentoring from a loosely related technology.
+
+The deterministic score is independent of the AI rewrite model. The AI optimizer is given the job's responsibilities (the scored gaps) and may only reword existing bullets using facts already present; it cannot change the scorer, and if its rewrites would lower the score the optimizer keeps the original wording and reports "no material improvement."
 
 ## Matching behavior
 

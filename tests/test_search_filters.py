@@ -574,3 +574,64 @@ def test_posted_at_round_trips_through_the_database(service: JobOSService) -> No
 
     age_days = (utc_now() - stored.posted_at).total_seconds() / 86_400
     assert 2.9 < age_days < 3.1
+
+
+async def test_hard_delete_closed_jobs_keeps_jobs_with_child_rows(service: JobOSService) -> None:
+    """Regression: hard-deleting closed jobs must not orphan ats_reports/applications.
+
+    A closed job that still has an ATS report (or application, or generated resume)
+    is protected; deleting it would raise a FOREIGN KEY error. A closed job with no
+    child rows is removed.
+    """
+    from tests.conftest import RESUME_MARKDOWN
+
+    from jobos.database import JobRecord
+
+    # Need a real resume version so the ATS report's FK resolves.
+    imported = await service.import_resume("master.md", RESUME_MARKDOWN.encode())
+
+    # Closed job WITH an ATS report -> must be kept.
+    reported = _seed(service, "Senior Backend Engineer", fp="rep", years=5.0, level="Senior")
+    service.database.save_ats_report(
+        reported, resume_version_id=imported.version_id, report=_ats_stub()
+    )
+    # Closed job WITHOUT any child row -> should be deleted.
+    orphan_data = JobData(
+        company="Acme",
+        title="Backend Engineer",
+        location="Bengaluru, India",
+        description="Backend role.",
+        apply_url="https://boards.greenhouse.io/acme/jobs/orphan",
+        source_url="https://boards.greenhouse.io/acme",
+        external_id="orphan",
+    )
+    orphan_view, _ = service.database.upsert_job(orphan_data, fingerprint="orphan")
+
+    # Mark both closed.
+    with service.database.session() as s:
+        for jid in (reported, orphan_view.id):
+            s.get(JobRecord, jid).is_active = False
+
+    assert service.closed_job_count() == 2
+    removed = service.hard_delete_closed_jobs()  # must not raise FOREIGN KEY error
+    assert removed == 1  # only the orphan
+    assert service.closed_job_count() == 1  # the reported one is protected
+
+
+def _ats_stub():
+    """Minimal valid ATSReportData for the regression test above."""
+    from jobos.models import ATSReportData
+
+    return ATSReportData(
+        scoring_version="test",
+        overall_score=50,
+        components=[],
+        matching_skills=[],
+        missing_skills=[],
+        weak_areas=[],
+        strong_areas=[],
+        keywords_found=[],
+        keywords_missing=[],
+        suggestions=[],
+        confidence="low",
+    )

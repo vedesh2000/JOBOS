@@ -172,8 +172,15 @@ def test_shipped_example_config_is_valid() -> None:
     raw["config_path"] = example
     config = AppConfig.model_validate(raw)
     assert config.ai.provider == "ollama"
-    assert config.companies == {}
     assert config.ai.tasks.structure_resume is True
+    # The example ships a large set of pre-validated boards so a new user can crawl
+    # immediately. Assert there are many and every URL is well-formed, rather than a
+    # fixed count (the seed set grows over time).
+    assert len(config.companies) >= 500
+    for company in config.companies.values():
+        assert company.url.startswith(("http://", "https://"))
+    # Preferences stay generic in the shipped example (no personal skills leaked).
+    assert config.preferences.skills_include == []
 
 
 def test_cloud_api_keys_come_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:

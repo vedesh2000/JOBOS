@@ -51,18 +51,73 @@
 {% endif %}
 {% else %}
 <div class="card">
-  <div class="actions">
-    <form method="post" action="/applications/{{ application.id }}/approve" class="inline"
-          data-busy="Rendering PDF...">
-      <button type="submit" class="btn primary">Approve and generate package</button>
-    </form>
-    <a class="btn" href="/jobs/{{ job.id }}">Back to job</a>
+  <div class="page-head">
+    <div>
+      <h2 style="margin-top:0">Edit, preview &amp; generate — all here</h2>
+      <p class="subtle">
+        Tweak the tailored resume as YAML, see the live preview, then generate the package —
+        without leaving this page. These are your own edits (schema-validated); the master
+        resume is never touched. Nothing is written to <code>output/</code> until you generate.
+      </p>
+    </div>
+    <div class="spacer"></div>
+    <div class="actions">
+      <button type="button" class="btn small" id="preview-btn">Preview</button>
+      <button type="submit" class="btn small" form="resume-edit-form">Save edits</button>
+      <form method="post" action="/applications/{{ application.id }}/approve" class="inline"
+            data-busy="Rendering PDF...">
+        <button type="submit" class="btn small primary">Generate package</button>
+      </form>
+    </div>
   </div>
-  <p class="subtle" style="margin:10px 0 0">
-    Nothing is written to <code>output/</code> until you approve. Each approval creates a new
-    version and never overwrites an earlier one.
+  <p class="subtle" style="margin:0 0 10px">
+    Tip: Save edits first, then Generate — Generate uses the last saved version.
+    <a href="/jobs/{{ job.id }}">Back to job</a>
   </p>
+  <div class="grid two">
+    <form method="post" action="/applications/{{ application.id }}/resume" id="resume-edit-form"
+          data-busy="Saving...">
+      <label class="subtle" for="resume_yaml">Tailored resume (YAML)</label>
+      <textarea id="resume_yaml" name="resume_yaml" spellcheck="false"
+                style="width:100%;min-height:520px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.45;white-space:pre;overflow:auto;">{{ resume_yaml }}</textarea>
+    </form>
+    <div>
+      <label class="subtle">Live preview</label>
+      <div id="preview-error" class="flash warn" style="display:none"></div>
+      <iframe id="resume-preview" title="Resume preview"
+              style="width:100%;min-height:520px;border:1px solid var(--border,#2a2a2a);border-radius:8px;background:#fff;"></iframe>
+    </div>
+  </div>
 </div>
+
+<script>
+(function () {
+  var editor = document.getElementById("resume_yaml");
+  var frame = document.getElementById("resume-preview");
+  var errorBox = document.getElementById("preview-error");
+  var button = document.getElementById("preview-btn");
+  if (!editor || !frame) return;
+  var timer = null;
+  async function refresh() {
+    var body = new URLSearchParams(); body.set("resume_yaml", editor.value);
+    try {
+      var res = await fetch("/applications/{{ application.id }}/preview", {
+        method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: body.toString(),
+      });
+      var text = await res.text();
+      if (res.ok) { errorBox.style.display = "none"; frame.srcdoc = text; }
+      else { errorBox.textContent = text || ("Preview failed (" + res.status + ")"); errorBox.style.display = ""; }
+    } catch (err) { errorBox.textContent = "Preview request failed: " + err; errorBox.style.display = ""; }
+  }
+  editor.addEventListener("input", function () {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(refresh, 600);
+  });
+  if (button) button.addEventListener("click", refresh);
+  refresh();  // show current version on load
+})();
+</script>
 {% endif %}
 
 <div class="card">
@@ -139,8 +194,4 @@
 </div>
 {% endif %}
 
-<div class="card">
-  <h2>Optimised resume preview</h2>
-  <pre>{{ preview }}</pre>
-</div>
 {% endblock %}

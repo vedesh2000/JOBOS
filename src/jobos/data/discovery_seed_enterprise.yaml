@@ -1,0 +1,174 @@
+# JobOS enterprise discovery seed - SmartRecruiters + Workday boards.
+#
+# Real boards from the public ATS directory, deep-probed against each board's
+# own public API for India roles (SmartRecruiters via country=in; Workday via
+# paged listings). Every India board with a target-profile role is kept, deduped
+# against config, aggregators removed, GCCs tagged [GCC]. Nothing invented.
+# `jobos validate-boards --seed enterprise` re-validates each live before adoption.
+#
+# Columns:  <relevant India roles> REL / <India roles> IN  [GCC?]
+candidates:
+
+
+  # === Smartrecruiters ===
+  aecom: https://jobs.smartrecruiters.com/aecom2  # 136 REL / 390 IN
+  linuxbean_solution_pvt_ltd: https://jobs.smartrecruiters.com/linuxbeansolutionpvtltd  # 80 REL / 145 IN
+  ramboll: https://jobs.smartrecruiters.com/ramboll3  # 52 REL / 101 IN
+  veolia_environnement_sa: https://jobs.smartrecruiters.com/VeoliaEnvironnementSA  # 32 REL /  66 IN
+  afry: https://jobs.smartrecruiters.com/afry  # 18 REL /  29 IN
+  rexel: https://jobs.smartrecruiters.com/rexel1  # 17 REL /  25 IN
+  sopra_steria: https://jobs.smartrecruiters.com/SopraSteria1  # 15 REL /  66 IN
+  aumovio: https://jobs.smartrecruiters.com/aumovio  # 13 REL /  29 IN
+  turner_townsend: https://jobs.smartrecruiters.com/turnertownsend  # 11 REL / 159 IN
+  bosch_homecomfort: https://jobs.smartrecruiters.com/bosch-homecomfort  # 11 REL /  17 IN [GCC]
+  lifted_an_upwork_company: https://jobs.smartrecruiters.com/liftedanupworkcompany  # 11 REL /  14 IN
+  intuitive: https://jobs.smartrecruiters.com/intuitive  #  9 REL /  63 IN
+  applus_idiada: https://jobs.smartrecruiters.com/applusidiada1  #  8 REL /  12 IN
+  continental: https://jobs.smartrecruiters.com/continental  #  7 REL /  13 IN [GCC]
+  syngenta_group: https://jobs.smartrecruiters.com/SyngentaGroup  #  6 REL /  28 IN
+  senior_plc: https://jobs.smartrecruiters.com/SeniorPlc1  #  6 REL /  12 IN
+  ra: https://jobs.smartrecruiters.com/ra2  #  6 REL /  10 IN
+  genzs_recruitment_solutions: https://jobs.smartrecruiters.com/GenZSRecruitmentSolutions  #  6 REL /   8 IN
+  sgs: https://jobs.smartrecruiters.com/sgs  #  5 REL /  25 IN
+  umdasch_group: https://jobs.smartrecruiters.com/umdaschgroup  #  5 REL /   9 IN
+  cermati_com: https://jobs.smartrecruiters.com/cermaticom  #  4 REL /   4 IN
+  h_m_group: https://jobs.smartrecruiters.com/HMGroup  #  3 REL / 115 IN
+  louis_dreyfus_company: https://jobs.smartrecruiters.com/louisdreyfuscompany  #  3 REL /  22 IN
+  texau: https://jobs.smartrecruiters.com/texau  #  3 REL /   5 IN
+  syntegon: https://jobs.smartrecruiters.com/SYNTEGON  #  3 REL /   4 IN
+  qima: https://jobs.smartrecruiters.com/qima  #  2 REL /  65 IN
+  expeditors: https://jobs.smartrecruiters.com/expeditors  #  2 REL /  12 IN
+  beumer_group: https://jobs.smartrecruiters.com/BEUMERGroup1  #  2 REL /   5 IN
+  avery_dennison: https://jobs.smartrecruiters.com/averydennison  #  1 REL /  28 IN
+  maskoid_technologies: https://jobs.smartrecruiters.com/maskoidtechnologies  #  1 REL /   8 IN
+  gerresheimer: https://jobs.smartrecruiters.com/gerresheimer  #  1 REL /   6 IN
+  dev: https://jobs.smartrecruiters.com/dev2  #  1 REL /   4 IN
+  kombo: https://jobs.smartrecruiters.com/kombo  #  1 REL /   2 IN
+  sw_group: https://jobs.smartrecruiters.com/swgroup  #  1 REL /   2 IN
+  medfar: https://jobs.smartrecruiters.com/Medfar  #  1 REL /   2 IN
+  krg_technology_inc: https://jobs.smartrecruiters.com/krgtechnologyinc  #  1 REL /   1 IN
+  stackone: https://jobs.smartrecruiters.com/stackone  #  1 REL /   1 IN
+  tomra: https://jobs.smartrecruiters.com/tomra  #  1 REL /   1 IN
+  usm: https://jobs.smartrecruiters.com/usm2  #  1 REL /   1 IN
+  entain: https://jobs.smartrecruiters.com/Entain  #  1 REL /   1 IN
+  somfy_group: https://jobs.smartrecruiters.com/somfygroup  #  1 REL /   1 IN
+  silvaco: https://jobs.smartrecruiters.com/Silvaco1  #  1 REL /   1 IN
+
+  # === Workday ===
+  jiostar: https://jiostar.wd102.myworkdayjobs.com/JioStar  # 87 REL / 238 IN
+  lloyds_technology_centre: https://lbg.wd3.myworkdayjobs.com/Lloyds_Technology_Centre  # 57 REL /  71 IN [GCC]
+  commbank_careers: https://cba.wd3.myworkdayjobs.com/CommBank_Careers  # 39 REL /  52 IN
+  crm_experienced_careers_site: https://pwc.wd3.myworkdayjobs.com/crm_experienced_careers_site  # 37 REL / 142 IN
+  thermofisher: https://thermofisher.wd5.myworkdayjobs.com/thermofishercareers  # 29 REL /  38 IN
+  simcorp_jobs: https://simcorp.wd3.myworkdayjobs.com/SimCorp_Jobs  # 26 REL /  38 IN
+  mkscareersemea: https://mksinst.wd1.myworkdayjobs.com/MKSCareersEMEA  # 20 REL /  42 IN
+  faicareers: https://firstam.wd1.myworkdayjobs.com/faicareers  # 20 REL /  28 IN
+  bpcareers: https://bpinternational.wd3.myworkdayjobs.com/bpCareers  # 18 REL /  27 IN
+  nonpublic_postings: https://pwc.wd3.myworkdayjobs.com/nonpublic_postings  # 17 REL / 178 IN
+  ingrammicro: https://ingrammicro.wd5.myworkdayjobs.com/ingrammicro  # 16 REL /  46 IN
+  warner_bros_discovery: https://warnerbros.wd5.myworkdayjobs.com/global  # 12 REL /  24 IN [GCC]
+  internal_employees_not_on_workday: https://nttlimited.wd3.myworkdayjobs.com/internal_employees_not_on_workday  # 12 REL /  18 IN
+  wellsfargojobstargeted: https://wf.wd1.myworkdayjobs.com/wellsfargojobstargeted  # 12 REL /  12 IN [GCC]
+  astreya: https://astreya.wd5.myworkdayjobs.com/life-at-astreya-opportunities  #  9 REL /  53 IN
+  millerknoll: https://millerknoll.wd1.myworkdayjobs.com/millerknoll  #  9 REL /  19 IN
+  gevernova: https://gevernova.wd5.myworkdayjobs.com/vernova_externalsite  #  9 REL /  14 IN
+  lateral_ba_continuum: https://ghr.wd1.myworkdayjobs.com/lateral-ba_continuum  #  8 REL /  63 IN
+  data_centers: https://nttglobaldatacenters.wd501.myworkdayjobs.com/external  #  8 REL /  59 IN
+  external_career_site_india: https://bdx.wd1.myworkdayjobs.com/EXTERNAL_CAREER_SITE_INDIA  #  8 REL /  35 IN
+  disneycareerdc: https://disney.wd5.myworkdayjobs.com/disneycareerdc  #  8 REL /  28 IN [GCC]
+  marvellcareers2: https://marvell.wd1.myworkdayjobs.com/MarvellCareers2  #  8 REL /  15 IN
+  only_confidential_executive_recruiting: https://gevernova.wd5.myworkdayjobs.com/only_confidential_executive_recruiting  #  8 REL /  11 IN
+  dentsuaegis: https://dentsuaegis.wd3.myworkdayjobs.com/dan_global  #  7 REL /  56 IN
+  private: https://ms.wd5.myworkdayjobs.com/private  #  7 REL /  35 IN
+  flextronics: https://flextronics.wd1.myworkdayjobs.com/careers  #  7 REL /  27 IN
+  redeploymentmedtroniccareers: https://medtronic.wd1.myworkdayjobs.com/redeploymentmedtroniccareers  #  7 REL /  21 IN [GCC]
+  elsevierjobs: https://relx.wd3.myworkdayjobs.com/ElsevierJobs  #  7 REL /  21 IN
+  medtronic: https://medtronic.wd1.myworkdayjobs.com/medtroniccareers  #  7 REL /  20 IN [GCC]
+  barrywehmiller: https://barrywehmiller.wd1.myworkdayjobs.com/bwcareers  #  7 REL /  14 IN
+  experienced_professionals: https://ryan.wd1.myworkdayjobs.com/Experienced-Professionals  #  7 REL /  14 IN
+  trane_technologies: https://tranetechnologies.wd12.myworkdayjobs.com/Trane_Technologies_Careers  #  7 REL /  12 IN
+  external_rockwell_automation_early_careers: https://rockwellautomation.wd1.myworkdayjobs.com/External-Rockwell-Automation-Early-Careers  #  7 REL /   7 IN [GCC]
+  syneoshealth: https://syneoshealth.wd12.myworkdayjobs.com/syneos_health_external_site  #  6 REL /  29 IN
+  mufg_earlycareers: https://mufgub.wd3.myworkdayjobs.com/MUFG-EarlyCareers  #  6 REL /  16 IN [GCC]
+  workday: https://workday.wd5.myworkdayjobs.com/workday  #  6 REL /  15 IN
+  etap_careers: https://aveva.wd3.myworkdayjobs.com/ETAP_Careers  #  6 REL /  13 IN
+  carrier: https://carrier.wd5.myworkdayjobs.com/jobs  #  6 REL /  13 IN
+  smith_nephew: https://smithnephew.wd5.myworkdayjobs.com/external  #  6 REL /  10 IN
+  r1rcm: https://r1rcm.wd1.myworkdayjobs.com/r1rcm  #  5 REL /  26 IN
+  broadridge: https://broadridge.wd5.myworkdayjobs.com/careers  #  5 REL /  18 IN [GCC]
+  cohesity: https://cohesity.wd5.myworkdayjobs.com/cohesity_careers  #  5 REL /  13 IN
+  u_s_bank: https://usbank.wd1.myworkdayjobs.com/us_bank_careers  #  5 REL /  11 IN
+  gap_inc: https://gapinc.wd1.myworkdayjobs.com/gapinc  #  5 REL /   6 IN [GCC]
+  cigna_group: https://cigna.wd5.myworkdayjobs.com/cignacareers  #  4 REL /  49 IN [GCC]
+  dxctechnology: https://dxctechnology.wd1.myworkdayjobs.com/dxcjobs  #  4 REL /  35 IN
+  external: https://equifax.wd5.myworkdayjobs.com/external  #  4 REL /  12 IN
+  regal_rexnord: https://regalrexnord.wd1.myworkdayjobs.com/careers  #  4 REL /  12 IN
+  externalinternational: https://calix.wd1.myworkdayjobs.com/ExternalInternational  #  4 REL /   7 IN
+  lexisnexis_risk_solutions: https://relx.wd3.myworkdayjobs.com/risksolutions  #  4 REL /   7 IN
+  pentair: https://pentair.wd5.myworkdayjobs.com/Pentair_Careers  #  4 REL /   7 IN
+  husqvarnagroup: https://husqvarnagroup.wd3.myworkdayjobs.com/external_career_site  #  4 REL /   6 IN
+  new_balance: https://newbalance.wd1.myworkdayjobs.com/careers  #  4 REL /   6 IN
+  incadea: https://volarisgroup.wd3.myworkdayjobs.com/Incadea  #  4 REL /   4 IN
+  exteu_ac_careersite: https://hp.wd5.myworkdayjobs.com/exteu-ac-careersite  #  3 REL /  39 IN
+  caterpillarcareers: https://cat.wd5.myworkdayjobs.com/CaterpillarCareers  #  3 REL /  20 IN [GCC]
+  owens_minor_and_accendra_health: https://owensminor.wd1.myworkdayjobs.com/omcareers  #  3 REL /  19 IN
+  us_kraft_heinz: https://heinz.wd1.myworkdayjobs.com/kraftheinz_careers  #  3 REL /  17 IN
+  labcorp: https://labcorp.wd1.myworkdayjobs.com/external  #  3 REL /  16 IN
+  avantor: https://vwr.wd1.myworkdayjobs.com/avantorjobs  #  3 REL /  16 IN
+  michelin: https://michelinhr.wd3.myworkdayjobs.com/michelin  #  3 REL /  13 IN
+  carelonglobal_in: https://elevancehealth.wd1.myworkdayjobs.com/carelonglobal_in  #  3 REL /   9 IN
+  euronext: https://hrhub.wd3.myworkdayjobs.com/euronext_career_page  #  3 REL /   8 IN
+  jci_confidential: https://jci.wd5.myworkdayjobs.com/JCI_Confidential  #  3 REL /   3 IN
+  woodward: https://woodward.wd5.myworkdayjobs.com/woodward  #  3 REL /   3 IN
+  novartis: https://novartis.wd3.myworkdayjobs.com/novartis_careers  #  2 REL /  35 IN [GCC]
+  parexel: https://parexel.wd1.myworkdayjobs.com/parexel_external_careers  #  2 REL /  21 IN
+  medline: https://medline.wd5.myworkdayjobs.com/medline  #  2 REL /  20 IN
+  rockwool_group: https://rockwoolgroup.wd3.myworkdayjobs.com/rockwool  #  2 REL /  19 IN
+  plante_moran: https://plantemoran.wd1.myworkdayjobs.com/pmexternalcareers  #  2 REL /  15 IN
+  aliaxis: https://aliaxis.wd3.myworkdayjobs.com/aliaxis  #  2 REL /  14 IN
+  capital_one: https://capitalone.wd12.myworkdayjobs.com/capital_one  #  2 REL /  11 IN [GCC]
+  sandvik_jobs: https://sandvik.wd3.myworkdayjobs.com/sandvik-jobs  #  2 REL /  10 IN
+  centific: https://centific.wd1.myworkdayjobs.com/centific_global  #  2 REL /  10 IN
+  georgfischer: https://georgfischer.wd103.myworkdayjobs.com/GeorgFischer_Careers  #  2 REL /   8 IN
+  freudenberg: https://freudenberg.wd3.myworkdayjobs.com/freudenberg-group  #  2 REL /   8 IN
+  borgwarner: https://borgwarner.wd5.myworkdayjobs.com/borgwarner_careers  #  2 REL /   6 IN
+  genesys: https://genesys.wd1.myworkdayjobs.com/genesys  #  2 REL /   6 IN
+  curtisswright: https://curtisswright.wd1.myworkdayjobs.com/cw_external_career_site  #  2 REL /   4 IN
+  fidelity: https://fmr.wd1.myworkdayjobs.com/fidelitycareers  #  2 REL /   4 IN [GCC]
+  corporate: https://hl.wd1.myworkdayjobs.com/Corporate  #  2 REL /   3 IN
+  reedexhibitions: https://relx.wd3.myworkdayjobs.com/ReedExhibitions  #  2 REL /   3 IN
+  private_posting_no_tmp: https://globalhr.wd5.myworkdayjobs.com/private_posting_no_tmp  #  2 REL /   3 IN
+  kiongroup: https://kiongroup.wd3.myworkdayjobs.com/kiongroup  #  2 REL /   3 IN
+  trendmicro: https://trendmicro.wd3.myworkdayjobs.com/external  #  2 REL /   3 IN
+  transperfect: https://transperfect.wd5.myworkdayjobs.com/transperfect  #  2 REL /   3 IN
+  chep_brambles: https://brambles.wd5.myworkdayjobs.com/brambles_careers  #  2 REL /   2 IN
+  theapexgroup: https://theapexgroup.wd3.myworkdayjobs.com/apexgroupcareers  #  1 REL /  52 IN
+  armanino_india: https://armaninollp.wd1.myworkdayjobs.com/Armanino_India  #  1 REL /  32 IN
+  trinity: https://trinitylifesciences.wd108.myworkdayjobs.com/trinity  #  1 REL /  21 IN
+  amlrightsource: https://amlrightsource.wd1.myworkdayjobs.com/amlrightsource  #  1 REL /  18 IN
+  ameriprise: https://ameriprise.wd5.myworkdayjobs.com/ameriprise  #  1 REL /  17 IN
+  sartorius: https://sartorius.wd3.myworkdayjobs.com/sartoriuscareers  #  1 REL /  15 IN
+  kimberlyclark: https://kimberlyclark.wd1.myworkdayjobs.com/global  #  1 REL /  12 IN
+  unilever: https://unilever.wd3.myworkdayjobs.com/unilever_experienced_professionals  #  1 REL /  11 IN [GCC]
+  regeneron: https://regeneron.wd1.myworkdayjobs.com/careers  #  1 REL /   9 IN
+  astrazeneca: https://astrazeneca.wd3.myworkdayjobs.com/careers  #  1 REL /   6 IN [GCC]
+  apm_terminals: https://maersk.wd3.myworkdayjobs.com/apmt_careers  #  1 REL /   6 IN
+  find_a_job_at_gea: https://gea.wd3.myworkdayjobs.com/geacareers  #  1 REL /   5 IN
+  huntsman_corporation: https://huntsman.wd1.myworkdayjobs.com/huntsman  #  1 REL /   5 IN
+  infobip: https://infobip.wd3.myworkdayjobs.com/infobipcareers  #  1 REL /   5 IN
+  solenis: https://solenis.wd1.myworkdayjobs.com/solenis  #  1 REL /   4 IN
+  allstate: https://allstate.wd5.myworkdayjobs.com/allstate_careers  #  1 REL /   3 IN [GCC]
+  revenera: https://flexerasoftware.wd1.myworkdayjobs.com/revenera  #  1 REL /   3 IN
+  polaris: https://polaris.wd5.myworkdayjobs.com/polarisjobs  #  1 REL /   3 IN
+  red_hat: https://redhat.wd5.myworkdayjobs.com/jobs  #  1 REL /   3 IN
+  allegro: https://allegromicro.wd5.myworkdayjobs.com/allegrocareers  #  1 REL /   2 IN
+  externalcareersite_private: https://chevron.wd5.myworkdayjobs.com/ExternalCareerSite_Private  #  1 REL /   1 IN
+  sandvik_internal_for_nonwd_employees: https://sandvik.wd3.myworkdayjobs.com/sandvik_internal_for_nonwd_employees  #  1 REL /   1 IN
+  blackberry: https://bb.wd3.myworkdayjobs.com/blackberry  #  1 REL /   1 IN
+  cloudera: https://cloudera.wd5.myworkdayjobs.com/external_career  #  1 REL /   1 IN
+  entrust: https://entrust.wd1.myworkdayjobs.com/entrustcareers  #  1 REL /   1 IN
+  globus_medical: https://globusmedical.wd5.myworkdayjobs.com/gmed_careers  #  1 REL /   1 IN
+  hexcelcareers: https://hexcel.wd5.myworkdayjobs.com/HexcelCareers  #  1 REL /   1 IN
+  kontoor_brands_inc_kontoor_brands: https://kbi.wd5.myworkdayjobs.com/kontoor  #  1 REL /   1 IN
+  mckesson: https://mckesson.wd3.myworkdayjobs.com/external_careers  #  1 REL /   1 IN
+  premier_research: https://premierresearch.wd12.myworkdayjobs.com/premierresearch  #  1 REL /   1 IN

@@ -1,0 +1,131 @@
+# JobOS Oracle / GCC discovery seed.
+#
+# Real Oracle Recruiting Cloud (Fusion HCM) tenant boards from the public ATS
+# directory (github.com/kalil0321/ats-scrapers), probed against each board's own
+# ORC JSON API with the India keyword filter. Every board with an India role is
+# kept; employer names for opaque tenant tokens were resolved from the board's
+# own corporate description. Nothing invented, no guessed URLs. GCCs tagged [GCC].
+# `jobos validate-boards --seed oracle` re-validates each live before adoption.
+#
+# Columns:  <relevant India roles> REL / <India roles> IN  [GCC?]
+candidates:
+
+  wsp: https://emit.fa.ca3.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  # 37 REL /  98 IN
+  emerson_career_site: https://hdjq.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  # 19 REL /  40 IN [GCC]
+  chubb: https://fa-ewgu-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2001  # 19 REL /  37 IN
+  williams_sonoma: https://ehac.fa.us6.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  # 15 REL /  24 IN [GCC]
+  clean_harbors_external_career_site: https://epyc.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  # 13 REL /  38 IN
+  epyc_clh_ca: https://epyc.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CLH-CA  # 13 REL /  38 IN
+  vertiv: https://egup.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  # 11 REL /  34 IN
+  fortinet: https://edel.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2001  # 11 REL /  14 IN
+  aci_worldwide_job_opportunities: https://ebwg.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX  # 11 REL /  13 IN
+  stantec: https://hdhl.fa.us6.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  # 10 REL /  28 IN
+  why_ti: https://edbz.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX  # 10 REL /  11 IN
+  texas_instruments: https://edbz.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  # 10 REL /  11 IN
+  black_box_careers: https://eoje.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  9 REL /  19 IN
+  wood: https://ehif.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  9 REL /  14 IN
+  kpmg_india: https://ejgk.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  8 REL / 100 IN [GCC]
+  only_oracle: https://eeho.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_45001  #  7 REL /  15 IN
+  oracle: https://eeho.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  7 REL /  15 IN
+  bristlecone: https://iaagiz.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  5 REL /  73 IN
+  fortive_careers: https://ejta.fa.us6.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  5 REL /  17 IN
+  fortive: https://ejta.fa.us6.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2001  #  5 REL /  17 IN
+  coherent: https://hcwp.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_8001  #  5 REL /  11 IN
+  coherent_corp_us: https://hcwp.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/cx_2004  #  5 REL /  11 IN
+  ralliant: https://ibwujb.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/cx_1001  #  5 REL /  11 IN
+  jefferies: https://hdid.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  5 REL /  10 IN
+  hill_minimal_112022: https://hcib.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  5 REL /   9 IN
+  jpmorgan_chase: https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001  #  4 REL /  31 IN [GCC]
+  dnv_careers: https://ecyq.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  4 REL /  10 IN
+  at_zensar: https://fa-etvl-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  4 REL /   9 IN
+  arcadis: https://ebcs.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  4 REL /   8 IN
+  lucy_electric: https://hdga.fa.em3.oraclecloud.com/hcmUI/CandidateExperience/en/sites/Lucyelectric  #  4 REL /   8 IN
+  lucy_group: https://hdga.fa.em3.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  4 REL /   8 IN
+  harmonic_inc: https://egmn.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  4 REL /   4 IN
+  hcog_cx_2001: https://hcog.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2001  #  3 REL /  15 IN
+  adani_career_site: https://eibd.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  2 REL / 100 IN
+  bny_external_career_site: https://eofe.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  2 REL /   9 IN [GCC]
+  calderys_career_opportunities: https://egmk.fa.us6.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  2 REL /   9 IN
+  bny: https://eofe.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001  #  2 REL /   9 IN [GCC]
+  geduglobal_iabmbn: https://geduglobal-iabmbn.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  2 REL /   8 IN
+  infoblox_careers: https://efpv.fa.us6.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  2 REL /   8 IN
+  gedu_global_education: https://geduglobal-iabmbn.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/gedu  #  2 REL /   8 IN
+  kldiscovery: https://ekug.fa.us6.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001  #  2 REL /   4 IN [GCC]
+  masimo: https://egcu.fa.us6.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX  #  2 REL /   3 IN
+  honeywell: https://ibqbjb.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  1 REL /  28 IN [GCC]
+  ibqbjb: https://ibqbjb.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/Honeywell  #  1 REL /  28 IN
+  kroll: https://hcxs.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  1 REL /  28 IN
+  cummins: https://fa-espx-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  1 REL /  10 IN [GCC]
+  nayara: https://fa-escq-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/cx_1001  #  1 REL /   8 IN
+  at_american_express: https://egug.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  1 REL /   6 IN [GCC]
+  iadugs: https://iadugs.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001  #  1 REL /   6 IN
+  nokia: https://fa-evmr-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  1 REL /   5 IN
+  datavail_career_site: https://eifn.fa.us6.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  1 REL /   2 IN
+  for: https://fa-ewmy-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  1 REL /   2 IN
+  iawmqy: https://iawmqy.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/careers  #  1 REL /   2 IN
+  who_we_are: https://iawmqy.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  1 REL /   2 IN
+  conduent: https://egua.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  1 REL /   1 IN
+  home_page: https://hdhy.fa.em3.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  1 REL /   1 IN [GCC]
+  omicron_iadzgs: https://omicron-iadzgs.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/OmicronCareers  #  1 REL /   1 IN
+  weatherford: https://fa-exmi-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  1 REL /   1 IN [GCC]
+  aster_dm_healthcare: https://hcdt.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  0 REL / 100 IN
+  wm: https://emcm.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  0 REL / 100 IN
+  hcdtgccprod_iayeqy: https://hcdtgccprod-iayeqy.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX  #  0 REL /  96 IN
+  b_entity_career_site: https://ejgk.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001  #  0 REL /  74 IN
+  kpmg_global_services: https://ejgk.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_3  #  0 REL /  51 IN [GCC]
+  tata_capital: https://eofh.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  0 REL /  39 IN
+  unitedlex: https://ekkk.fa.us6.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  0 REL /  17 IN
+  career_site: https://iaceiz.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  0 REL /  11 IN
+  trinet: https://fa-etgw-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/cx_1  #  0 REL /  10 IN
+  computershare: https://fa-evdq-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/computersharecareers  #  0 REL /   9 IN
+  goldman_sachs_lateral_hiring: https://hdpc.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/LateralHiring  #  0 REL /   9 IN [GCC]
+  havells: https://iabgcp.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/cx_1  #  0 REL /   9 IN
+  csc: https://hczw.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  0 REL /   8 IN
+  dp_world: https://ehpv.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  0 REL /   8 IN
+  icfcjb: https://icfcjb.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/Aerospace  #  0 REL /   7 IN
+  apps_associates: https://ebdt.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/cx_9003  #  0 REL /   7 IN
+  iaamcp: https://iaamcp.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CSB  #  0 REL /   6 IN
+  mufg_pension_market_services: https://hcmn.fa.ap1.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001  #  0 REL /   6 IN [GCC]
+  hilton: https://efet.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1009  #  0 REL /   5 IN
+  cantor_fitzgerald_bgc: https://hdow.fa.us6.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  0 REL /   4 IN
+  gp_strategies_career_site: https://eetz.fa.us6.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  0 REL /   4 IN
+  hcfa_amnealcareers: https://hcfa.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/AmnealCareers  #  0 REL /   4 IN
+  hcfa_cx_5001: https://hcfa.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_5001  #  0 REL /   4 IN
+  hdow_cx_1001: https://hdow.fa.us6.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001  #  0 REL /   4 IN [GCC]
+  kpmg_delivery_network_india_1: https://ejgk.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_3001  #  0 REL /   4 IN [GCC]
+  mashreq_careers: https://hcld.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  0 REL /   4 IN
+  rjcorphcm_iacbiz: https://rjcorphcm-iacbiz.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  0 REL /   4 IN
+  yum: https://eczd.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  0 REL /   4 IN
+  amneal_india: https://hcfa.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/AmnealIndiaCareers  #  0 REL /   4 IN
+  at_ihg: https://fa-evax-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001  #  0 REL /   3 IN
+  fda: https://fda.fa.us1.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  0 REL /   3 IN
+  mouser: https://eabw.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  0 REL /   3 IN
+  wtw_external_careers_site: https://eedu.fa.em3.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  0 REL /   3 IN
+  solstice_advanced_materials: https://ibzdjb.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/SolsticeAdvancedMaterials  #  0 REL /   3 IN
+  at_sherwin_williams: https://ejhp.fa.us6.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2  #  0 REL /   2 IN
+  transforming_businesses: https://fa-evmm-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  0 REL /   2 IN
+  ipsos: https://ecqf.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2001  #  0 REL /   2 IN
+  nov: https://egay.fa.us6.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  0 REL /   2 IN
+  sherwin_williams: https://ejhp.fa.us6.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  0 REL /   2 IN
+  twe_global_careers: https://ebpm.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  0 REL /   2 IN
+  avient: https://fa-eqzh-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/Avient  #  0 REL /   2 IN
+  anywhere: https://ibmqjb.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  0 REL /   1 IN
+  corsair: https://edix.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  0 REL /   1 IN
+  coopercompanies: https://hcjy.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  0 REL /   1 IN
+  cytel: https://iblyjb.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  0 REL /   1 IN
+  this: https://eklm.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX  #  0 REL /   1 IN
+  garrett_advancing_motion: https://ehth.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2001  #  0 REL /   1 IN
+  iagime: https://iagime.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  0 REL /   1 IN
+  iaings: https://iaings.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/SinchCareer  #  0 REL /   1 IN
+  iblyjb: https://iblyjb.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/cytel  #  0 REL /   1 IN
+  jobs_carmeuse: https://ekiz.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX  #  0 REL /   1 IN
+  sedgman: https://elgl.fa.ap1.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2004  #  0 REL /   1 IN
+  sinch: https://iaings.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  0 REL /   1 IN
+  nri: https://edtq.fa.ap1.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  0 REL /   1 IN
+  un_women_undp_access: https://estm.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001  #  0 REL /   1 IN
+  iom_supplier_portal: https://fa-evlj-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001  #  0 REL /   1 IN
+  herm_s: https://fa-eoic-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX  #  0 REL /   1 IN
+  iom: https://fa-evlj-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1  #  0 REL /   1 IN
+  goldman_sachs: https://hdpc.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/cx_3001  #  0 REL /   1 IN [GCC]
+  samsonite: https://ekkf.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/cx  #  0 REL /   1 IN
+  ul_solutions: https://fa-eups-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/cx_1  #  0 REL /   1 IN

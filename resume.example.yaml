@@ -1,0 +1,359 @@
+schema_version: 1
+contact:
+  name: John Dy
+  email: john.dy@example.com
+  phone: +91-90000-00000
+  location: Bengaluru, India
+  links:
+  - https://github.com/johndy
+  - https://www.linkedin.com/in/johndy/
+  - https://leetcode.com/u/johndy/
+summary: Senior Software Engineer with 5+ years of experience designing and delivering scalable B2B, B2C,
+  and SaaS platforms across Python, Node.js, Java/Spring Boot, React/TypeScript, and AWS. Proven track
+  record of building distributed systems, automating complex business workflows, optimizing application
+  performance, and engineering end-to-end products.
+skills:
+- Python
+- JavaScript
+- TypeScript
+- Java
+- SQL
+- C
+- C++
+- Shell Scripting
+- Node.js
+- Express
+- FastAPI
+- Django
+- Spring Boot
+- Spring Security
+- REST APIs
+- GraphQL
+- Microservices
+- API Design
+- Backend for Frontend (BFF)
+- commercetools
+- Async I/O
+- Schedulers
+- Workflow Automation
+- React
+- React Query
+- Redux
+- Microfrontends
+- Storybook
+- HTML
+- CSS
+- Material UI
+- Tailwind CSS
+- Web Accessibility
+- Code Splitting
+- Lazy Loading
+- Memoization
+- PostgreSQL
+- MongoDB
+- Redis
+- ORM
+- PubNub
+- AWS Lambda
+- Amazon SQS
+- Amazon Bedrock
+- AWS EC2
+- Amazon RDS
+- Amazon S3
+- Amazon CloudFront
+- Amazon SES
+- AWS CloudWatch
+- Docker
+- Linux
+- Kubernetes
+- CI/CD
+- GitHub Actions
+- Grafana
+- Datadog
+- OAuth2
+- JWT
+- Session Authentication
+- CSRF
+- RBAC
+- Idempotency
+- Exponential Backoff
+- Caching
+- Distributed Systems
+- System Design
+- HLD/LLD
+- OOAD
+- Design Patterns
+- Service Design
+- Observability
+- Monitoring and Alerting
+- Pytest
+- Jest
+- Generative AI
+- LLMs
+- RAG
+- Prompt Engineering
+- AI Agent Workflows
+- Conversation Memory
+- LangChain
+- LangGraph
+skill_groups:
+  Languages:
+  - Python
+  - JavaScript
+  - TypeScript
+  - Java
+  - SQL
+  - C++
+  Backend:
+  - Node.js
+  - Express
+  - FastAPI
+  - Django
+  - Spring Boot
+  - REST APIs
+  - GraphQL
+  - Microservices
+  - API Design
+  Frontend:
+  - React
+  - React Query
+  - Redux
+  - Microfrontends
+  - TypeScript
+  - Material UI
+  - Tailwind CSS
+  Cloud & DevOps:
+  - AWS Lambda
+  - Amazon SQS
+  - Amazon Bedrock
+  - AWS EC2
+  - Amazon RDS
+  - Amazon S3
+  - Docker
+  - Kubernetes
+  - CI/CD
+  - GitHub Actions
+  Data & Storage:
+  - PostgreSQL
+  - MongoDB
+  - Redis
+  AI / ML:
+  - Generative AI
+  - LLMs
+  - RAG
+  - Prompt Engineering
+  - AI Agent Workflows
+  - LangChain
+  - LangGraph
+  Engineering:
+  - HLD
+  - LLD
+  - OOAD
+  - OOPS
+  - kubernetes
+  - Linux
+  - Docker
+  - RBAC
+  - Idempotency
+  - Caching
+  - Observability
+  - System Design
+experience:
+- id: exp-globallogic-6sense
+  company: 6sense (via GlobalLogic, a Hitachi Digital Company)
+  title: Senior Engineer (SDE III)
+  start_date: Apr 2026
+  end_date: Present
+  location: Bangalore, India
+  bullets:
+  - id: gl-distributed-data-deletion
+    text: Designed and implemented a 20+ step distributed organization data-deletion workflow across 3,500+
+      B2B SaaS clients spanning terabytes of data, implementing parallel job orchestration, automatic
+      re-runs, exponential-backoff retries, and eventual-consistency handling across multiple systems
+      along with  business notifications  for 30-day follow-ups, open-opportunity handling, deletion gates,  and
+      deletion certificate generation for legal and support teams.
+  - id: gl-cross-system-deletion-verification
+    text: Engineered reusable inline and post-deletion verification frameworks in Python/Django for Automated
+      Instance Deletion, implementing 20+ validation checks across databases, storage, and downstream
+      services to detect incomplete deletions, maintain cross-system data consistency, and ensure proper
+      team Pagerduty alerting via custom exceptions.
+  - id: gl-credit-allocation-automation
+    text: Automated previously manual credit allocation and top-up workflows across 2,000+ B2B clients
+      using configurable business rules, automations, notifications and guardrails. Standardises organisation-wide
+      credit provisioning and reduces manual operational effort.
+  - id: gl-organization-lifecycle-investigation
+    text: Built Django backend APIs and a React investigation interface to reconstruct organization lifecycles
+      across 15+ complex audit-log event types, providing business owners with a unified view of previously
+      fragmented records and organisation state transitions.
+  - id: gl-agency-consent-access-controls
+    text: Developed frontend and backend authorization middleware workflows with consent-based access
+      controls and mandate forms for 100+ partner agencies, securing agency-specific organization data
+      and enforcing authorized access across partner workflows.
+  skills:
+  - Python
+  - Django
+  - React
+  - REST APIs
+  - Distributed Systems
+  - Workflow Orchestration
+  - Parallel Processing
+  - Eventual Consistency
+  - Retry Mechanisms
+  - Exponential Backoff
+  - PostgreSQL
+  - Authorization
+  - RBAC
+  - Pytest
+  - PagerDuty
+  - Monitoring and Alerting
+  - Automation
+- id: exp-infosys-specialist-programmer
+  company: Infosys
+  title: Specialist Programmer Level 2 (SDE II)
+  start_date: Aug 2021
+  end_date: Apr 2026
+  location: Hyderabad, India
+  bullets:
+  - id: inf-fastapi-commerce-platform
+    text: Engineered an extensible Python/FastAPI platform over commercetools to standardize e-commerce
+      workflows across 1,500+ stores, reducing manual effort by 90%; mentored teams adopting the platform
+      across the US, UK and Australia.
+  - id: inf-realtime-b2b-messaging
+    text: Initiated and delivered real-time messaging across 750+ B2B sites using Node.js, PostgreSQL,
+      PubNub and React; added retries and fallback polling to achieve 99%+ reliability and reduce incident
+      resolution time by 60%.
+  - id: inf-react-performance-microfrontends
+    text: Improved React responsiveness by 70% through backend aggregation, code splitting, lazy loading
+      and memoization; developed web accessible shared microfrontends and Storybook UI libraries for cross-team
+      reuse.
+  - id: inf-cart-api-transaction-reliability
+    text: Redesigned commercetools cart APIs for mixed-basket discounts, migrated REST endpoints to GraphQL,
+      and implemented payment idempotency across React and Java/Spring Boot checkout flows, retry guards,
+      and transaction controls; improved load times by 30% and reduced duplicate or failed/invalid payment-adjacent
+      transactions by 40%.
+  - id: inf-redis-transactions-dashboard
+    text: Built paginated transaction dashboards using write-through Redis caching and background reconciliation
+      to maintain consistency, reducing database reads by 50–60%.
+  - id: inf-customer-commerce-react-ui
+    text: Developed accessible, responsive customer-facing commerce frontends in React and TypeScript
+      with scalable microfrontends and reusable components; resolved production issues and improved application
+      efficiency by 50–60%.
+  skills:
+  - React
+  - TypeScript
+  - JavaScript
+  - Python
+  - FastAPI
+  - Node.js
+  - PostgreSQL
+  - Redis
+  - PubNub
+  - Java
+  - Spring Boot
+  - GraphQL
+  - commercetools
+  - Microfrontends
+  - Storybook
+projects:
+- id: proj-kundalihub-ai-platform
+  name: KundaliHub — AI Astrology and Remedies Platform
+  description: Solo-developed AI-enabled platform for consultations, bookings, commerce and reports (May
+    2025 – Present).
+  url: https://kundalihub.com
+  bullets:
+  - id: kh-product-platform-architecture
+    text: Architected and launched a full-stack React, Node.js, Python, PostgreSQL and AWS product supporting
+      5,000+ users across authentication, consultations, bookings, chat, wallets, payments, content, campaigns
+      and administration; deployed with Docker, EC2, RDS, Lambda, S3, CloudFront and GitHub Actions.
+  - id: kh-bedrock-sqs-async-reports
+    text: Architected and implemented an asynchronous AI report-generation pipeline using Amazon SQS,
+      AWS Lambda, and Amazon Bedrock Claude, decoupling multi-minute LLM inference (~16,000 tokens per
+      report) from customer-facing requests and successfully delivering 200+ AI-generated reports in production.
+  - id: kh-rag-consultation-orchestration
+    text: Built RAG-enabled AI consultation orchestration with custom prompts, scoring algorithms, conversation
+      memory and agent workflows, increasing repeat usage by 60% and monetisation.
+  - id: kh-seo-static-content-engine
+    text: Developed a backend-driven SEO publishing engine that generates optimized static HTML and serves
+      it through S3 and CloudFront; optimized single and bulk publishing without N+1 database queries
+      to reduce application-server content delivery for 500+ blogs.
+  - id: kh-campaign-batch-automation
+    text: Built a scheduler for one-time and recurring email campaigns, including Amazon SES batch processing,
+      failure/retry logging, channel performance, attribution and conversion reporting for onboarding,
+      birthdays, festivals and newsletters.
+  - id: kh-wallet-coin-transactions
+    text: Designed virtual wallet and coin-based consultation transactions with balance tracking, transaction
+      history and failure-aware flows as a foundation for monetization.
+  - id: kh-bookings-razorpay-payments
+    text: Implemented booking, intent-trigger, Razorpay payment, order-state, email notification and transaction-history
+      workflows with failure-aware processing.
+  - id: kh-session-auth-security-admin
+    text: Implemented session authentication, SSO, CSRF protection, RBAC, audit logging, adaptive rate
+      limiting, idempotent APIs, caching, analytics and internal admin tooling, reducing operational effort
+      by 90%.
+  - id: kh-cloud-health-recovery
+    text: Developed multi-layer health monitoring and automated recovery for EC2/Linux, Docker containers,
+      Node.js processes and database pools using CloudWatch, periodic health checks, memory logs and failure
+      detection.
+  skills:
+  - React
+  - TypeScript
+  - Node.js
+  - Express
+  - Python
+  - PostgreSQL
+  - Amazon RDS
+  - AWS EC2
+  - AWS Lambda
+  - Amazon SQS
+  - Amazon Bedrock
+  - Amazon S3
+  - Amazon CloudFront
+  - Amazon SES
+  - Docker
+  - GitHub Actions
+  - RAG
+  - LLMs
+  - Langcahin
+  - LangGraph
+  - Generative AI
+  - Razorpay
+  - OAuth2
+  - CSRF
+  - RBAC
+education:
+- id: edu-nit-andhra-pradesh-btech
+  institution: NIT Andhra Pradesh
+  degree: Bachelor of Technology (B.Tech)
+  field: Computer Science and Engineering
+  start_date: Aug 2017
+  end_date: May 2021
+  details:
+  - 'CGPA: 7.33'
+certifications:
+- id: cert-commercetools-developer
+  name: Commercetools Developer
+  issuer: ''
+  date: ''
+- id: cert-namaste-react
+  name: Namaste React
+  issuer: ''
+  date: ''
+- id: cert-ai-developer
+  name: AI Developer Certification
+  issuer: ''
+  date: ''
+achievements:
+- id: ach-globallogic-spot-award
+  text: GlobalLogic Spot Award
+- id: ach-infosys-insta-award
+  text: Infosys Insta Award
+- id: ach-nptel-dbms-top-five
+  text: Top 5% in NPTEL DBMS
+- id: ach-leetcode-five-hundred
+  text: Solved 500+ LeetCode problems
+- id: ach-qualified-gate-iitjee
+  text: Qualified GATE (CS) and IIT-JEE
+- id: ach-eamcet-rank-676
+  text: Achieved AP EAMCET rank 676
+languages: []
+additional_sections: {}

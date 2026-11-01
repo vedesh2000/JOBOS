@@ -74,6 +74,101 @@ class AIClient:
                 last_error = str(exc)[:1_000]
         raise AIError(f"{self.settings.provider} returned invalid structured output: {last_error}")
 
+    async def chat(
+        self, *, system: str, messages: list[dict[str, str]]
+    ) -> str:
+        """Free-form text reply for the grounded coach — the one non-JSON AI path.
+
+        Unlike ``generate`` (strict JSON for the resume pipeline), this returns prose,
+        because a coaching answer is conversational. It is still constrained in scope
+        by its caller: the system prompt grounds it in the user's real data and forbids
+        inventing jobs, and it has no tools and no write access. ``messages`` is the
+        prior turn history (role/content dicts) plus the new user turn.
+        """
+        provider = self.settings.provider
+        turns = [{"role": m["role"], "content": m["content"]} for m in messages]
+        if provider == "ollama":
+            body: dict[str, Any] = {
+                "model": self.settings.model,
+                "stream": False,
+                "keep_alive": self.settings.keep_alive,
+                "messages": [{"role": "system", "content": system}, *turns],
+                "options": {
+                    "temperature": self.settings.temperature,
+                    "num_predict": self.settings.max_output_tokens,
+                },
+            }
+            if self.settings.disable_thinking:
+                body["think"] = False
+            url = f"{self.base_url}/api/chat"
+            try:
+                response = await self._request("POST", url, json_body=body)
+            except AIError as exc:
+                if "think" not in str(exc).casefold():
+                    raise
+                body.pop("think", None)
+                response = await self._request("POST", url, json_body=body)
+            return str(response.json().get("message", {}).get("content") or "").strip()
+
+        api_key = self.settings.api_key
+        if not api_key:
+            variable = f"JOBOS_{provider.upper()}_API_KEY"
+            raise AIError(f"{provider} requires the {variable} environment variable")
+
+        if provider in {"openai", "openrouter"}:
+            response = await self._request(
+                "POST",
+                f"{self.base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}"},
+                json_body={
+                    "model": self.settings.model,
+                    "temperature": self.settings.temperature,
+                    "messages": [{"role": "system", "content": system}, *turns],
+                },
+            )
+            return cast(str, response.json()["choices"][0]["message"]["content"]).strip()
+
+        if provider == "anthropic":
+            response = await self._request(
+                "POST",
+                f"{self.base_url}/messages",
+                headers={"x-api-key": api_key, "anthropic-version": "2023-06-01"},
+                json_body={
+                    "model": self.settings.model,
+                    "max_tokens": self.settings.max_output_tokens,
+                    "temperature": self.settings.temperature,
+                    "system": system,
+                    "messages": turns,
+                },
+            )
+            blocks = response.json()["content"]
+            return "".join(
+                block.get("text", "") for block in blocks if block.get("type") == "text"
+            ).strip()
+
+        if provider == "gemini":
+            contents = [
+                {
+                    "role": "model" if m["role"] == "assistant" else "user",
+                    "parts": [{"text": m["content"]}],
+                }
+                for m in turns
+            ]
+            response = await self._request(
+                "POST",
+                f"{self.base_url}/models/{self.settings.model}:generateContent",
+                params={"key": api_key},
+                json_body={
+                    "systemInstruction": {"parts": [{"text": system}]},
+                    "contents": contents,
+                    "generationConfig": {"temperature": self.settings.temperature},
+                },
+            )
+            return cast(
+                str, response.json()["candidates"][0]["content"]["parts"][0]["text"]
+            ).strip()
+        raise AIError(f"unsupported AI provider: {provider}")
+
     async def health(self) -> tuple[bool, str]:
         """Check local Ollama directly; cloud providers are checked for required configuration."""
         if self.settings.provider != "ollama":

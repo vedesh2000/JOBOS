@@ -10,6 +10,7 @@ from rapidfuzz import fuzz
 
 from jobos.ai import AIClient, AIError
 from jobos.ats import (
+    SCORING_VERSION_V2,
     SKILL_ALIASES,
     canonical_skill,
     extract_known_skills,
@@ -154,6 +155,40 @@ def skill_listed_as_required(skill: str, job: JobView) -> bool:
     return False
 
 
+def detect_skill_groups(job: JobView) -> list[list[str]]:
+    """Find alternative skill groups like "React or Vue" in the posting text.
+
+    Matches known skills joined by "or" or "/" (optionally after "like"/"such as"), so
+    "a modern UI framework like React or Vue" becomes one group [react, vue.js]. Only
+    known skills are grouped, and a group needs at least two distinct members, so this
+    never invents a requirement. Used so the v2 scorer treats the alternatives as one
+    satisfiable requirement rather than independent mandatory skills.
+    """
+    text = f"{job.description}\n{job.experience}"
+    groups: list[list[str]] = []
+    seen: set[frozenset[str]] = set()
+    # "A or B", "A/B", "A, B, or C" among skill-like tokens, optionally after like/such as.
+    pattern = re.compile(
+        r"(?:like|such as|either\s+)?"
+        r"([A-Za-z][\w.+#-]*(?:\s*(?:,|/|\bor\b)\s*[A-Za-z][\w.+#-]*){1,4})",
+        re.IGNORECASE,
+    )
+    for match in pattern.finditer(text):
+        fragment = match.group(1)
+        if not re.search(r"\bor\b|/", fragment, re.IGNORECASE):
+            continue
+        candidates = re.split(r"\s*(?:,|/|\bor\b)\s*", fragment, flags=re.IGNORECASE)
+        members = _dedupe(
+            [canonical_skill(c) for c in candidates if extract_known_skills(c)]
+        )
+        if len(members) >= 2:
+            key = frozenset(members)
+            if key not in seen:
+                seen.add(key)
+                groups.append(members)
+    return groups
+
+
 def analyze_job_offline(job: JobView) -> JobAnalysis:
     """Extract conservative requirements without a model."""
     text = f"{job.title}\n{job.description}\n{job.experience}\n{' '.join(job.skills)}"
@@ -194,6 +229,7 @@ def analyze_job_offline(job: JobView) -> JobAnalysis:
     return JobAnalysis(
         required_skills=required,
         preferred_skills=preferred,
+        skill_groups=detect_skill_groups(job),
         responsibilities=responsibilities,
         technologies=skills,
         seniority=seniority,
@@ -341,6 +377,7 @@ class JobAnalyzerAgent:
         return JobAnalysis(
             required_skills=_dedupe(required or fallback.required_skills),
             preferred_skills=_dedupe(preferred),
+            skill_groups=fallback.skill_groups,
             responsibilities=_dedupe(responsibilities or fallback.responsibilities),
             technologies=fallback.technologies,
             seniority=fallback.seniority,
@@ -473,15 +510,21 @@ class ResumeAgent:
             "forbidden_skills": matched_skills(
                 resume, analysis.required_skills + analysis.preferred_skills
             )[1][:15],
+            # The job's responsibilities, so the model can surface wording a bullet
+            # ALREADY supports — this is what connects the rewrite to the scored gaps.
+            "job_responsibilities": analysis.responsibilities[:8],
         }
         try:
             response = await self.ai.generate(
                 BulletSuggestion,
                 system=(
-                    "Propose concise wording improvements for existing resume bullets only. Preserve "
-                    "the exact facts, numbers, technologies, ownership, scope, and meaning of each "
-                    "source bullet. Never add a job keyword unless it already occurs in that bullet "
-                    "or its experience_skills. Never invent impact. Return at most one rewrite per ID."
+                    "Reword existing resume bullets so they more clearly express the "
+                    "job_responsibilities, using ONLY facts already present in each source bullet "
+                    "or its experience_skills. Preserve every number, technology, ownership, scope, "
+                    "and the core meaning exactly. Do not add a responsibility a bullet does not "
+                    "already demonstrate, do not add a job keyword unless it already occurs in the "
+                    "bullet or its experience_skills, and never invent impact or metrics. If a "
+                    "bullet cannot be improved truthfully, omit it. At most one rewrite per ID."
                 ),
                 payload=payload,
             )
@@ -504,6 +547,11 @@ class ResumeAgent:
 
 
 class ATSAgent:
+    """Scores with the current scorer version. v1 remains callable for old reports."""
+
+    def __init__(self, scoring_version: str = SCORING_VERSION_V2) -> None:
+        self.scoring_version = scoring_version
+
     def score(
         self,
         resume: StructuredResume,
@@ -518,6 +566,7 @@ class ATSAgent:
             job.title,
             job_id=job.id,
             resume_version_id=resume_version_id,
+            scoring_version=self.scoring_version,
         )
 
 
@@ -919,9 +968,30 @@ class Coordinator:
             job,
             resume_version_id=resume_version_id,
         )
+        warnings = list(result.warnings + summary_notes)
+        # Never ship a resume that scores WORSE than the master. If the reworded
+        # bullets dropped the score (a fuzzy match can regress), fall back to a
+        # reorder-only plan that keeps the master's exact wording — ordering never
+        # lowers the deterministic score. The score may still be equal: that is an
+        # honest "no material improvement", not a failure.
+        if after.overall_score < before.overall_score:
+            reorder_only = plan.model_copy(update={"bullet_rewrites": [], "summary": None})
+            result = self.truth_guard.apply(master, reorder_only, analysis)
+            after = self.ats.score(
+                result.optimized_resume, analysis, job, resume_version_id=resume_version_id
+            )
+            warnings.append(
+                "Kept your original bullet wording: the AI rewrites would have lowered the "
+                "match score, so only ordering was applied."
+            )
+        if after.overall_score <= before.overall_score:
+            warnings.append(
+                "No material score improvement for this job — your resume is already a close "
+                "match, or the gap is in evidence the resume does not truthfully contain."
+            )
         return OptimizationBundle(
             result=result,
             ats_before=before,
             ats_after=after,
-            warnings=result.warnings + summary_notes,
+            warnings=warnings,
         )

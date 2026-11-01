@@ -12,6 +12,10 @@ from rapidfuzz import fuzz
 from jobos.models import ATSReportData, JobAnalysis, ScoreComponent, StructuredResume
 
 SCORING_VERSION: Final = "jobos-ats-v1"
+# v2 adds: OR/alternative requirement groups, N/A preferred coverage with transparent
+# renormalisation, and evidence-cited responsibility matching. v1 is preserved exactly
+# for historical results; callers opt into v2 explicitly.
+SCORING_VERSION_V2: Final = "jobos-ats-v2"
 
 SKILL_ALIASES: dict[str, set[str]] = {
     "amazon web services": {"aws", "amazon web services"},
@@ -240,6 +244,109 @@ def _coverage_component(
     return _component(name, score, maximum, matched, missing)
 
 
+def _required_units(
+    required: list[str], skill_groups: list[list[str]]
+) -> list[list[str]]:
+    """Group required skills into satisfaction units for OR/alternative handling.
+
+    Each unit is a list of interchangeable skills; satisfying ANY member satisfies the
+    unit. Standalone required skills become singleton units. A skill that appears in a
+    group is not also counted as its own unit, so "React or Vue" is one requirement,
+    not two. Used only by the v2 scorer.
+    """
+    grouped: set[str] = set()
+    units: list[list[str]] = []
+    for group in skill_groups:
+        members = [skill for skill in group if skill]
+        if len(members) >= 2:
+            units.append(members)
+            grouped.update(canonical_skill(skill) for skill in members)
+    for skill in required:
+        if canonical_skill(skill) not in grouped:
+            units.append([skill])
+    return units
+
+
+def _coverage_component_v2(
+    name: str,
+    maximum: float,
+    units: list[list[str]],
+    resume_text: str,
+) -> tuple[ScoreComponent, list[str], list[str]]:
+    """Coverage where each unit is satisfied by matching ANY of its members (OR).
+
+    Returns the component plus the flat matched and missing skill lists for downstream
+    reporting. A unit counts as satisfied when the resume supports at least one member;
+    the score is satisfied-units / total-units. This is what makes React alone satisfy
+    "React or Vue" without Vue counting as an independent miss.
+    """
+    if not units:
+        return _component(name, maximum, maximum, ["No explicit requirement"]), [], []
+    satisfied = 0
+    matched: list[str] = []
+    missing: list[str] = []
+    for unit in units:
+        hit = [skill for skill in unit if skill_in_text(skill, resume_text)]
+        if hit:
+            satisfied += 1
+            matched.extend(hit)
+        else:
+            # Report the unit as one gap; "a or b" when it was an alternative.
+            missing.append(" or ".join(unit) if len(unit) > 1 else unit[0])
+    score = maximum * satisfied / len(units)
+    return _component(name, score, maximum, matched, missing), matched, missing
+
+
+def _responsibility_component_v2(
+    resume: StructuredResume, responsibilities: list[str]
+) -> ScoreComponent:
+    """Responsibility alignment that cites the supporting bullet for each match.
+
+    Keeps the v1 threshold (0.55) and the same fuzzy + token-overlap signal — this is
+    deliberately NOT a loosened bar. The only behavioural change is that evidence now
+    names the specific bullet that supports each responsibility, so a match is
+    auditable. A responsibility with no bullet above threshold stays a gap; nothing is
+    inferred from loosely related technology.
+    """
+    maximum = 15.0
+    labelled: list[tuple[str, str]] = []  # (bullet_text, "source label")
+    for experience in resume.experience:
+        source = f"{experience.title} — {experience.company}".strip(" —")
+        for bullet in experience.bullets:
+            labelled.append((bullet.text, source))
+    for project in resume.projects:
+        for bullet in project.bullets:
+            labelled.append((bullet.text, project.name))
+    if not responsibilities:
+        return _component("Responsibility alignment", maximum, maximum, ["No explicit requirement"])
+    if not labelled:
+        return _component(
+            "Responsibility alignment", 0, maximum, gaps=["No experience/project bullets to compare"]
+        )
+    alignments: list[float] = []
+    evidence: list[str] = []
+    gaps: list[str] = []
+    for responsibility in responsibilities[:20]:
+        best_align = 0.0
+        best_source = ""
+        for text, source in labelled:
+            fuzz_score = fuzz.token_set_ratio(responsibility, text) / 100
+            token_overlap = len(_content_tokens(responsibility) & _content_tokens(text)) / max(
+                1, len(_content_tokens(responsibility))
+            )
+            align = max(fuzz_score * 0.7 + token_overlap * 0.3, 0)
+            if align > best_align:
+                best_align, best_source = align, source
+        alignments.append(best_align)
+        short = responsibility[:70] + ("…" if len(responsibility) > 70 else "")
+        if best_align >= 0.55:
+            evidence.append(f"{short}  ⟵ {best_source}")
+        else:
+            gaps.append(short)
+    score = maximum * sum(alignments) / len(alignments)
+    return _component("Responsibility alignment", score, maximum, evidence[:8], gaps[:8])
+
+
 def _content_tokens(value: str) -> set[str]:
     return {
         token
@@ -426,20 +533,42 @@ def score_resume(
     *,
     job_id: int | None = None,
     resume_version_id: int | None = None,
+    scoring_version: str = SCORING_VERSION,
 ) -> ATSReportData:
-    """Score one structured resume against one structured job analysis."""
+    """Score one structured resume against one structured job analysis.
+
+    ``scoring_version`` selects the algorithm. The default ``jobos-ats-v1`` reproduces
+    historical results exactly. ``jobos-ats-v2`` adds OR/alternative requirement groups,
+    N/A preferred coverage with transparent renormalisation, and evidence-cited
+    responsibility matching. The two never mix, so a stored v1 report is reproducible.
+    """
+    use_v2 = scoring_version == SCORING_VERSION_V2
     required_match, required_missing, required_context = matched_skills(
         resume, analysis.required_skills
     )
     preferred_match, preferred_missing, preferred_context = matched_skills(
         resume, analysis.preferred_skills
     )
-    required = _coverage_component(
-        "Required skill coverage", 25, analysis.required_skills, required_match, required_missing
-    )
-    preferred = _coverage_component(
-        "Preferred skill coverage", 10, analysis.preferred_skills, preferred_match, preferred_missing
-    )
+    if use_v2:
+        # Required coverage honours OR-groups: React alone satisfies "React or Vue".
+        units = _required_units(analysis.required_skills, analysis.skill_groups)
+        required, required_match, required_missing = _coverage_component_v2(
+            "Required skill coverage", 25, units, resume.searchable_text()
+        )
+    else:
+        required = _coverage_component(
+            "Required skill coverage", 25, analysis.required_skills, required_match, required_missing
+        )
+
+    # Preferred coverage. v2 reports N/A (and renormalises) when there are no preferred
+    # skills, instead of awarding a vacuous full 10.
+    preferred_na = use_v2 and not analysis.preferred_skills
+    if preferred_na:
+        preferred = _component("Preferred skill coverage (N/A)", 0.0, 10, ["No preferred skills in this posting"])
+    else:
+        preferred = _coverage_component(
+            "Preferred skill coverage", 10, analysis.preferred_skills, preferred_match, preferred_missing
+        )
     all_matched = required_match + preferred_match
     all_context = list(dict.fromkeys(required_context + preferred_context))
     contextual_score = 15.0 if not all_matched else 15.0 * len(all_context) / len(all_matched)
@@ -450,16 +579,29 @@ def score_resume(
         all_context,
         [skill for skill in all_matched if skill not in all_context],
     )
+    responsibility_component = (
+        _responsibility_component_v2(resume, analysis.responsibilities)
+        if use_v2
+        else _responsibility_component(resume, analysis.responsibilities)
+    )
     components = [
         required,
         preferred,
         contextual,
-        _responsibility_component(resume, analysis.responsibilities),
+        responsibility_component,
         _experience_component(resume, analysis),
         _role_component(resume, job_title),
         _parseability_component(resume),
     ]
-    overall = round(sum(component.score for component in components))
+    if preferred_na:
+        # Transparent renormalisation: with preferred N/A, its 10 points are removed
+        # from the denominator and the remaining 90 are rescaled to 100, so the score
+        # is not silently inflated by a free 10. Scored out of the applicable maximum.
+        applicable_max = sum(c.maximum for c in components if c is not preferred)
+        raw = sum(c.score for c in components if c is not preferred)
+        overall = round(100 * raw / applicable_max)
+    else:
+        overall = round(sum(component.score for component in components))
     matching = list(dict.fromkeys(required_match + preferred_match))
     missing = list(dict.fromkeys(required_missing + preferred_missing))
     keyword_candidates = list(dict.fromkeys(analysis.keywords + analysis.technologies))
@@ -487,7 +629,7 @@ def score_resume(
     explicit_signals = len(analysis.required_skills) + len(analysis.responsibilities)
     confidence = "high" if explicit_signals >= 5 else "medium" if explicit_signals >= 2 else "low"
     return ATSReportData(
-        scoring_version=SCORING_VERSION,
+        scoring_version=scoring_version,
         overall_score=overall,
         components=components,
         matching_skills=matching,

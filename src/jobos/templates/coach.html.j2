@@ -1,0 +1,68 @@
+{% extends "base.html.j2" %}
+{% block title %}Coach — JobOS{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>Coach</h1>
+    <p class="subtle">
+      A supportive companion grounded in your real local data. It remembers your
+      conversation and never invents jobs or numbers.
+    </p>
+  </div>
+</div>
+
+<section class="card digest">
+  <h2>Today</h2>
+  <p>{{ digest.headline }}</p>
+  <div class="stats">
+    <div class="stat"><b>{{ digest.new_jobs_today }}</b><span>New today</span></div>
+    <div class="stat"><b>{{ digest.new_jobs_7d }}</b><span>New (7d)</span></div>
+    <div class="stat"><b>{{ digest.strong_matches }}</b><span>Strong matches</span></div>
+    <div class="stat"><b>{{ digest.applications_total }}</b><span>Applications</span></div>
+  </div>
+  {% if digest.top_picks %}
+  <p class="subtle">Best-fit picks to spend today on:</p>
+  <ul class="plain">
+    {% for pick in digest.top_picks %}<li>{{ pick }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+</section>
+
+<section class="card">
+  <div class="coach-head">
+    <h2>Chat</h2>
+    <form method="post" action="/coach/clear" class="inline"
+          onsubmit="return confirm('Forget the whole conversation?');">
+      <button type="submit" class="btn small">Clear history</button>
+    </form>
+  </div>
+
+  <div id="coach-log" class="coach-log">
+    {% for m in messages %}
+    <div class="coach-msg {{ m.role }}">
+      <div class="coach-bubble-wrap">
+        <span class="coach-who">{{ 'You' if m.role == 'user' else 'Coach' }}</span>
+        <div class="coach-bubble">{{ m.content }}</div>
+      </div>
+    </div>
+    {% else %}
+    <p class="empty" id="coach-empty">
+      Ask me to summarize your day, compare this week to last, or suggest companies to focus on.
+    </p>
+    {% endfor %}
+  </div>
+
+  <form method="post" action="/coach/message" id="coach-form" class="coach-form">
+    <input type="text" name="message" id="coach-input" autocomplete="off"
+           placeholder="Ask your coach… e.g. “what should I focus on today?”" required>
+    <button type="submit" class="btn primary">Send</button>
+  </form>
+  <p class="subtle">
+    Replies are grounded in your JobOS data. Configure a provider on the
+    <a href="/ai">AI</a> page for conversational answers; without one you still get the
+    deterministic daily summary.
+  </p>
+</section>
+
+{% endblock %}

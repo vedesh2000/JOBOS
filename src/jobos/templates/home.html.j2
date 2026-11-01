@@ -1,0 +1,250 @@
+{% extends "base.html.j2" %}
+{% block title %}JobOS — Welcome{% endblock %}
+{% block content %}
+<h1>JobOS</h1>
+<p class="subtle" style="max-width:720px">
+  A local-first assistant that helps you apply to engineering jobs faster — without ever
+  lying on your resume. It runs entirely on your machine: your resume and data never leave it,
+  and JobOS never submits an application for you. It prepares the package; you click apply.
+</p>
+
+<div class="flow-wrap" role="img" aria-label="JobOS flow: Resume, then Companies, then Crawl, then Tailor, then Apply">
+  <div class="flow">
+    <div class="flow-step" style="--i:0">
+      <div class="flow-box">
+        <span class="flow-ico">📄</span>
+        <span class="flow-title">Resume</span>
+        <span class="flow-sub">Add once as YAML</span>
+      </div>
+    </div>
+    <div class="flow-link" style="--i:0"><span class="flow-dot"></span></div>
+    <div class="flow-step" style="--i:1">
+      <div class="flow-box">
+        <span class="flow-ico">🏢</span>
+        <span class="flow-title">Companies</span>
+        <span class="flow-sub">List job boards</span>
+      </div>
+    </div>
+    <div class="flow-link" style="--i:1"><span class="flow-dot"></span></div>
+    <div class="flow-step" style="--i:2">
+      <div class="flow-box">
+        <span class="flow-ico">🛰️</span>
+        <span class="flow-title">Crawl</span>
+        <span class="flow-sub">Pull live jobs</span>
+      </div>
+    </div>
+    <div class="flow-link" style="--i:2"><span class="flow-dot"></span></div>
+    <div class="flow-step" style="--i:3">
+      <div class="flow-box">
+        <span class="flow-ico">✨</span>
+        <span class="flow-title">Tailor</span>
+        <span class="flow-sub">Truthful match &amp; score</span>
+      </div>
+    </div>
+    <div class="flow-link" style="--i:3"><span class="flow-dot"></span></div>
+    <div class="flow-step" style="--i:4">
+      <div class="flow-box">
+        <span class="flow-ico">🚀</span>
+        <span class="flow-title">Apply</span>
+        <span class="flow-sub">One-page PDF, you submit</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .flow-wrap { margin: 18px 0 22px; overflow-x: auto; padding: 6px 2px 10px; }
+  .flow {
+    display: flex; align-items: center; gap: 4px; min-width: 720px;
+  }
+  .flow-step { flex: 1 1 0; display: flex; justify-content: center; }
+  .flow-box {
+    position: relative; display: flex; flex-direction: column; align-items: center;
+    gap: 3px; text-align: center; width: 100%; max-width: 150px;
+    padding: 14px 10px; border-radius: 14px;
+    background: linear-gradient(160deg, rgba(90,130,255,0.10), rgba(90,130,255,0.02));
+    border: 1px solid rgba(120,150,255,0.35);
+    /* Staggered entrance + a gentle breathing glow, offset per box via --i. */
+    opacity: 0; transform: translateY(8px);
+    animation:
+      flow-in .5s ease forwards,
+      flow-glow 3s ease-in-out infinite;
+    animation-delay: calc(var(--i) * .18s), calc(1s + var(--i) * .6s);
+  }
+  .flow-ico { font-size: 22px; line-height: 1; }
+  .flow-title { font-weight: 700; font-size: 13.5px; letter-spacing: .3px; }
+  .flow-sub { font-size: 11px; opacity: .72; }
+  .flow-link { flex: 0 0 34px; height: 2px; position: relative;
+    background: linear-gradient(90deg, rgba(120,150,255,0.15), rgba(120,150,255,0.5)); border-radius: 2px; }
+  .flow-link::after {
+    content: ""; position: absolute; right: -2px; top: 50%; transform: translateY(-50%);
+    border-left: 7px solid rgba(120,150,255,0.7);
+    border-top: 5px solid transparent; border-bottom: 5px solid transparent;
+  }
+  /* A pulse travels box-to-box to imply direction/flow. */
+  .flow-dot {
+    position: absolute; top: 50%; left: 0; width: 7px; height: 7px; margin-top: -3.5px;
+    border-radius: 50%; background: #9db4ff; box-shadow: 0 0 8px 2px rgba(130,160,255,0.9);
+    animation: flow-travel 4s linear infinite;
+    animation-delay: calc(var(--i) * .8s);
+  }
+  @keyframes flow-in { to { opacity: 1; transform: translateY(0); } }
+  @keyframes flow-glow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(120,150,255,0.0); border-color: rgba(120,150,255,0.35); }
+    50% { box-shadow: 0 0 18px 1px rgba(120,150,255,0.45); border-color: rgba(150,175,255,0.75); }
+  }
+  @keyframes flow-travel {
+    0% { left: 0; opacity: 0; }
+    15% { opacity: 1; }
+    85% { opacity: 1; }
+    100% { left: 100%; opacity: 0; }
+  }
+  /* Respect users who prefer no motion. */
+  @media (prefers-reduced-motion: reduce) {
+    .flow-box { opacity: 1; transform: none; animation: none; box-shadow: 0 0 14px 1px rgba(120,150,255,0.3); }
+    .flow-dot { display: none; }
+  }
+</style>
+
+<div class="card">
+  <h2>How it works, in five steps</h2>
+  <ol style="line-height:1.7;max-width:760px">
+    <li>
+      <b>Add your resume once.</b> Give JobOS your resume as a structured YAML file (there's a
+      one-click prompt to turn your existing PDF into one). It's stored as your immutable
+      "master" — the single source of truth for your facts.
+    </li>
+    <li>
+      <b>List the companies you care about.</b> Point JobOS at company job boards (Greenhouse,
+      Lever, Ashby, Workday, SmartRecruiters). It reads them through their public APIs — no
+      fragile scraping.
+    </li>
+    <li>
+      <b>Crawl for jobs.</b> JobOS pulls the current openings from those boards into a local
+      list you can search and filter by skill, location, score, and freshness.
+    </li>
+    <li>
+      <b>Tailor truthfully.</b> For a job you like, JobOS reorders and lightly rewords your
+      existing bullets to match — then a "truth guard" rejects anything that would add a
+      number, a skill, or a claim you didn't already have. It also scores how well you fit.
+    </li>
+    <li>
+      <b>Generate and apply.</b> JobOS renders a clean, one-page, ATS-friendly PDF (plus
+      Markdown and JSON), and opens the employer's own application page for you to submit.
+    </li>
+  </ol>
+</div>
+
+<div class="card">
+  <h2>The flow at a glance</h2>
+  <p class="mono" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.9;white-space:pre-wrap">
+Your resume (YAML)  ─▶  Master resume (stored, never edited by AI)
+Company boards      ─▶  Crawl  ─▶  Jobs list (search &amp; filter)
+Pick a job          ─▶  Analyse &amp; score  ─▶  Tailor (truth-guarded)  ─▶  Review
+Approve             ─▶  One-page PDF + Markdown + JSON  ─▶  Open apply page</p>
+</div>
+
+<div class="card">
+  <h2>Crawling in waves</h2>
+  <p class="subtle" style="max-width:820px">
+    Different job boards cost very different amounts of time to read, so JobOS crawls them in
+    speed <b>waves</b> — fastest first — and saves jobs as each company finishes. The moment the
+    fast wave completes you can start applying, while the slower waves keep running behind you.
+  </p>
+  <div class="wave-grid">
+    <div class="wave-card wave-fast">
+      <div class="wave-head"><span class="wave-badge">Fast</span> ~1–2 min</div>
+      <p>Greenhouse · Lever · Ashby</p>
+      <span class="subtle">Whole board in one request — instant.</span>
+    </div>
+    <div class="wave-card wave-medium">
+      <div class="wave-head"><span class="wave-badge">Medium</span> minutes</div>
+      <p>SmartRecruiters · Oracle</p>
+      <span class="subtle">Paged list + one fetch per posting.</span>
+    </div>
+    <div class="wave-card wave-slow">
+      <div class="wave-head"><span class="wave-badge">Slow</span> the long tail</div>
+      <p>Workday</p>
+      <span class="subtle">Paged, a fetch per posting, no location filter.</span>
+    </div>
+  </div>
+  <p class="subtle" style="margin-top:12px">
+    Run one wave from the Jobs page crawl dropdown, or all of them in order with
+    <code>jobos crawl-waves</code> (you get a ping as each wave finishes). Re-crawls only update
+    what changed, so your daily refresh stays quick.
+  </p>
+</div>
+
+<div class="card">
+  <h2>How companies are discovered</h2>
+  <p class="subtle" style="max-width:820px">
+    JobOS doesn't guess company URLs or invent openings. New boards come from a
+    <b>discover → validate → adopt</b> pipeline:
+  </p>
+  <ol style="line-height:1.75;max-width:820px">
+    <li>
+      <b>Discover (probe).</b> Candidate boards come from public, open ATS directories — real
+      company slugs, never fabricated. Each is probed against the board's own public API to see
+      if it actually has India engineering roles.
+    </li>
+    <li>
+      <b>Validate.</b> A board is only accepted if it resolves on a supported ATS, returns the
+      right JSON shape, and lists real India postings. <b>HTTP 200 alone is never trusted</b> — a
+      login page or empty board is rejected, and unsupported portals are flagged for review, not
+      silently scraped.
+    </li>
+    <li>
+      <b>Adopt.</b> Boards that pass are written into your config one at a time (so an interrupted
+      run keeps everything already added) and tagged in a discovery registry — including whether
+      the employer is a <b>Global Capability Centre (GCC)</b>.
+    </li>
+  </ol>
+  <p class="subtle">
+    Browse the outcome on <a href="/insights">Insights</a>, and run
+    <code>jobos validate-boards --seed gcc --adopt</code> to expand coverage. Everything is
+    respectful of robots.txt and rate limits, and nothing bypasses CAPTCHA or logins.
+  </p>
+</div>
+
+<div class="grid two">
+  <div class="card">
+    <h3>What JobOS does</h3>
+    <ul class="plain" style="line-height:1.7">
+      <li>Keeps your facts exact — only wording and ordering ever change.</li>
+      <li>Explains every ATS score and every rejected edit.</li>
+      <li>Runs offline on a local model, with safe fallbacks if the model is down.</li>
+      <li>Versions every resume and every generated package — nothing is overwritten.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>What JobOS never does</h3>
+    <ul class="plain" style="line-height:1.7">
+      <li>Submit applications, log in, or bypass bot protection on your behalf.</li>
+      <li>Invent achievements, numbers, skills, or employers.</li>
+      <li>Send your resume or data to anyone — it all stays on your machine.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Your setup</h2>
+  <ul class="plain" style="line-height:1.8">
+    <li>
+      Master resume:
+      {% if has_resume %}<span class="badge">ready</span>{% else %}<span class="badge">not added yet</span> — <a href="/resume">add it on the Resume page</a>{% endif %}
+    </li>
+    <li>Companies configured: <b>{{ company_count }}</b> <span class="subtle">(manage on <a href="/organizations">Organizations</a>)</span></li>
+    <li>Jobs stored locally: <b>{{ job_count }}</b> <span class="subtle">(browse on <a href="/">Jobs</a>)</span></li>
+    <li>AI model: <code>{{ ai_model }}</code> via <code>{{ ai_provider }}</code> <span class="subtle">(change on <a href="/ai">AI</a>)</span></li>
+  </ul>
+  <div class="actions" style="margin-top:12px">
+    {% if not has_resume %}
+    <a class="btn primary" href="/resume">Start: add your resume</a>
+    {% else %}
+    <a class="btn primary" href="/">Go to Jobs</a>
+    {% endif %}
+    <a class="btn" href="/organizations">Manage companies</a>
+    <a class="btn" href="/readme">Full docs</a>
+  </div>
+</div>
+{% endblock %}
